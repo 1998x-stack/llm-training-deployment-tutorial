@@ -6,10 +6,10 @@
     <title>第17章 DPO与偏好对齐优化</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,53 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第17章 DPO与偏好对齐优化</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第17章 DPO与偏好对齐优化</h1>
 
         <p>大家好，我是你们的讲师。上一章我们深入了RLHF——从奖励模型训练到PPO的完整链路。RLHF效果卓越，但它有一个让人头疼的问题：太复杂。训练不稳定、四个模型同时驻留、reward hacking、需要写大量的RL训练pipeline代码——这一切让很多团队望而却步。如果你问一个做过RLHF的工程师"做RLHF最痛苦的是什么"，他大概率不会说"理论难"，而是会说"工程太烦了"。</p>
 
         <p>那么问题来了：有没有一种方法，能绕开显式的奖励模型和PPO，直接用偏好数据来优化模型？2023年斯坦福大学发表的<strong>DPO（Direct Preference Optimization）</strong>就是对这个问题的漂亮回答。它用数学推导证明了：RLHF的整个流程可以简化为一个只需要偏好对的直接优化目标。这一章我们详细拆解DPO及其变体，并给出在不同场景下选择对齐策略的实战指南。</p>
 
-        <h3>17.1 DPO的数学之美</h3>
+        <h2>17.1 DPO的数学之美</h2>
+
+        <figure>
+            <svg viewBox="0 0 700 360" role="img" aria-labelledby="fig17-1-title fig17-1-desc">
+                <title id="fig17-1-title">RLHF/PPO 与 DPO 的流程对比</title>
+                <desc id="fig17-1-desc">上半部分：PPO 需要策略、采样、奖励、更新四个环节并带 RL 反馈循环；下半部分：DPO 直接用偏好对计算损失并更新策略，省去奖励模型与 critic。</desc>
+                <defs>
+                    <marker id="fig17-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+                    </marker>
+                </defs>
+                <text x="30" y="26" font-size="14" font-weight="600" fill="#b91c1c">RLHF / PPO：4 个模型 + RL 循环</text>
+                <rect x="30" y="48" width="120" height="48" rx="10" fill="#fee2e2" stroke="#ef4444"></rect>
+                <text x="90" y="77" text-anchor="middle" font-size="13" fill="#7f1d1d">策略 πθ</text>
+                <rect x="185" y="48" width="120" height="48" rx="10" fill="#fee2e2" stroke="#ef4444"></rect>
+                <text x="245" y="77" text-anchor="middle" font-size="13" fill="#7f1d1d">采样 y ~ πθ</text>
+                <rect x="340" y="48" width="120" height="48" rx="10" fill="#fee2e2" stroke="#ef4444"></rect>
+                <text x="400" y="77" text-anchor="middle" font-size="13" fill="#7f1d1d">奖励 RM</text>
+                <rect x="495" y="48" width="170" height="48" rx="10" fill="#fee2e2" stroke="#ef4444"></rect>
+                <text x="580" y="77" text-anchor="middle" font-size="13" fill="#7f1d1d">PPO 更新（critic）</text>
+                <line x1="150" y1="72" x2="183" y2="72" stroke="#64748b" stroke-width="2" marker-end="url(#fig17-1-arrow)"></line>
+                <line x1="305" y1="72" x2="338" y2="72" stroke="#64748b" stroke-width="2" marker-end="url(#fig17-1-arrow)"></line>
+                <line x1="460" y1="72" x2="493" y2="72" stroke="#64748b" stroke-width="2" marker-end="url(#fig17-1-arrow)"></line>
+                <path d="M580 96 L580 132 L90 132 L90 98" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fig17-1-arrow)"></path>
+                <text x="30" y="160" font-size="12" fill="#7f1d1d">常驻：策略 / 参考 / 奖励 / 价值 → 4 个模型，需 RL 训练框架</text>
+                <line x1="20" y1="185" x2="680" y2="185" stroke="#cbd5e1" stroke-width="1.5"></line>
+                <text x="30" y="216" font-size="14" font-weight="600" fill="#15803d">DPO：2 个模型 + 监督式损失</text>
+                <rect x="30" y="238" width="180" height="48" rx="10" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="120" y="267" text-anchor="middle" font-size="13" fill="#14532d">偏好对 (x, y_w, y_l)</text>
+                <rect x="255" y="238" width="140" height="48" rx="10" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="325" y="267" text-anchor="middle" font-size="13" fill="#14532d">DPO 损失</text>
+                <rect x="440" y="238" width="225" height="48" rx="10" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="552" y="267" text-anchor="middle" font-size="13" fill="#14532d">直接梯度更新 πθ（无 RM/critic）</text>
+                <line x1="210" y1="262" x2="253" y2="262" stroke="#64748b" stroke-width="2" marker-end="url(#fig17-1-arrow)"></line>
+                <line x1="395" y1="262" x2="438" y2="262" stroke="#64748b" stroke-width="2" marker-end="url(#fig17-1-arrow)"></line>
+                <text x="30" y="320" font-size="12" fill="#14532d">常驻：策略 / 参考 → 2 个模型，无需 RL 框架，显存减半</text>
+            </svg>
+            <figcaption>图 17-1　RLHF/PPO 与 DPO 的流程对比。上：PPO 需策略、参考、奖励、价值四个模型并跑 RL 循环（虚线为 rollout 反馈）；下：DPO 只保留策略与参考模型，用偏好对直接优化，省去显式奖励模型与 critic。「4 / 2 个模型」为常见工程配置（Rafailov 等 2023 指出 DPO 无需 RM 与 critic），并非论文强制要求。</figcaption>
+        </figure>
 
         <p>DPO的核心洞察非常深刻：RLHF中有一个隐含的闭式解关系——在KL约束下，最优policy和奖励函数之间存在一一对应关系。换句话说，<strong>奖励函数可以表示为最优policy和reference policy的比值</strong>。既然这样，我们干嘛还要显式训练一个RM呢？直接把奖励函数的定义代入RLHF的目标，就能得到只依赖于policy的loss函数。</p>
 
@@ -57,7 +95,7 @@
 
         <p>在RLHF中，我们在KL约束下最大化奖励的期望值。这个带约束优化问题的解是：</p>
 
-        <pre><code># 最优policy的闭式解
+        <pre style="overflow-x:auto"><code># 最优policy的闭式解
 π*(y|x) = (1/Z(x)) * π_ref(y|x) * exp(r(x,y) / β)
 
 # 变形可得reward的表达式：
@@ -72,6 +110,21 @@ L_DPO = -E[ log σ(β * log(π_θ(y_w|x) / π_ref(y_w|x))
 
 # 其中y_w是偏好回答（chosen），y_l是非偏好回答（rejected）</code></pre>
 
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="DPO 损失函数">
+            <math display="block" aria-label="L DPO equals minus expectation over D of log sigma of beta log pi theta chosen over pi ref chosen minus beta log pi theta rejected over pi ref rejected">
+                <mrow>
+                    <msub><mi>L</mi><mi>DPO</mi></msub><mo>=</mo><mo>−</mo>
+                    <msub><mi>E</mi><mi>D</mi></msub><mo>[</mo>
+                    <mi>log</mi><mi>σ</mi><mo>(</mo><mi>β</mi><mi>log</mi>
+                    <mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mo>(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>|</mo><mi>x</mi><mo>)</mo></mrow><mrow><msub><mi>π</mi><mtext>ref</mtext></msub><mo>(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>|</mo><mi>x</mi><mo>)</mo></mrow></mfrac>
+                    <mo>−</mo><mi>β</mi><mi>log</mi>
+                    <mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mo>(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>|</mo><mi>x</mi><mo>)</mo></mrow><mrow><msub><mi>π</mi><mtext>ref</mtext></msub><mo>(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>|</mo><mi>x</mi><mo>)</mo></mrow></mfrac>
+                    <mo>)</mo><mo>]</mo>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 17-1　DPO 损失（Rafailov 等，2023）。y_w 为 chosen，y_l 为 rejected，π_ref 为冻结的参考策略。</span>
+        </div>
+
         <p>这个loss函数的美妙之处在于：它只依赖于policy模型π_θ和reference模型π_ref，不需要任何额外的RM或价值网络。训练时只需要偏好对数据，loss直接优化policy的生成概率，让chosen回答的概率上升、rejected回答的概率下降。</p>
 
         <p>为什么说DPO是"绕过"了RLHF？因为DPO的loss函数虽然是监督学习的形式，但它导出的policy正是RLHF框架下的最优policy。这是一个数学等价性的证明——不是近似，是精确等价。当然，实际训练中DPO和PPO的效果还是有差异的，因为PPO可以采样on-policy数据而DPO是off-policy，但这是工程层面的差异而非理论层面的。</p>
@@ -80,17 +133,55 @@ L_DPO = -E[ log σ(β * log(π_θ(y_w|x) / π_ref(y_w|x))
             <p><strong>核心认知</strong>：DPO证明了"显式奖励模型"只是一个中间产物，并非偏好对齐的必需品。这个认知在2023年震撼了整个对齐研究社区。从RLHF到DPO，我们减少了：一个完整的RM模型、一个value network、整个PPO的rollout和GAE计算——训练效率提升了一个数量级。</p>
         </div>
 
-        <h3>17.2 DPO训练实践</h3>
+        <h2>17.2 DPO训练实践</h2>
 
         <p>理论总是美好的，实践中DPO也有自己的门道。这里分享几个关键的超参和注意事项。</p>
 
         <p><strong>β参数调优</strong>。β控制着"偏好边缘有多宽"。β越小，模型对chosen和rejected之间的差异越敏感，优化步长越大，但风险也越高——模型可能会过度放大细微的偏好差异。β越大，优化越保守。推荐的范围是0.1到0.5。一个实用的调优方法：先用一个小的β跑一轮训练，检查chosen和rejected的log-probability差距的变化幅度。如果差距增长过快（单步超过0.5 nats），说明β太小了，需要增大。</p>
 
+        <div class="widget" id="dpo-widget">
+            <p><strong>感受一下 β 的作用</strong>　固定策略与参考模型的对数比差 Δ（教学示意），拖动 β 看 DPO 损失与偏好概率如何变化。</p>
+            <label for="dpo-b">温度系数 β：<output id="dpo-b-out">0.10</output></label>
+            <input id="dpo-b" type="range" min="0.02" max="1" step="0.01" value="0.1" aria-label="DPO 温度系数 beta">
+            <label for="dpo-d">对数比差 Δ：<output id="dpo-d-out">4.0</output></label>
+            <input id="dpo-d" type="range" min="-4" max="8" step="0.5" value="4" aria-label="chosen 与 rejected 的对数比差">
+            <button type="button" id="dpo-reset">推荐起点（β = 0.1）</button>
+            <button type="button" id="dpo-conserv">保守档（β = 0.5）</button>
+            <p class="readout" id="dpo-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var beta = 0.1, delta = 4.0;
+            var bOut = document.getElementById('dpo-b-out'), dOut = document.getElementById('dpo-d-out');
+            var out = document.getElementById('dpo-out');
+            function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+            function render() {
+                var z = beta * delta, s = sigmoid(z), loss = -Math.log(s);
+                var note = beta < 0.05 ? '　β 过小：单步梯度大，易过度放大偏好差异。'
+                    : (beta > 0.5 ? '　β 偏大：优化保守，收敛可能偏慢。' : '　处于推荐区间 0.1–0.5。');
+                out.textContent = '隐式奖励差 β·Δ = ' + z.toFixed(3) + '；P(y_w ≻ y_l) = σ(βΔ) = '
+                    + s.toFixed(3) + '；DPO loss = −log σ = ' + loss.toFixed(3) + '。' + note;
+                bOut.textContent = beta.toFixed(2);
+                dOut.textContent = delta.toFixed(1);
+            }
+            document.getElementById('dpo-b').addEventListener('input', function (e) { beta = +e.target.value; render(); });
+            document.getElementById('dpo-d').addEventListener('input', function (e) { delta = +e.target.value; render(); });
+            document.getElementById('dpo-reset').addEventListener('click', function () {
+                beta = 0.1; document.getElementById('dpo-b').value = 0.1; delta = 4.0;
+                document.getElementById('dpo-d').value = 4; render();
+            });
+            document.getElementById('dpo-conserv').addEventListener('click', function () {
+                beta = 0.5; document.getElementById('dpo-b').value = 0.5; render();
+            });
+            render();
+        })();
+        </script>
+
         <p><strong>Reference Model选择</strong>。DPO需要一个冻结的reference model来计算log-probability比率。这个reference model通常就是SFT checkpoint。但需要注意：如果SFT模型在特定数据上已经过拟合了，用它做reference会导致DPO阶段的负优化——因为chosen回答的概率可能一开始就比rejected高很多，模型失去优化空间。建议在SFT阶段用early stopping保留一个泛化更好的checkpoint作为后续DPO的reference。</p>
 
         <p><strong>Chosen/Rejected数据质量</strong>。DPO对数据质量比SFT更敏感。如果rejected回答的质量其实并不差（只是相对chosen差一点点），loss会很小，DPO的效果就会打折扣。一个常见的优化是"margin-based DPO"：当chosen和rejected的reward差距很小时，给loss加上一个margin，让模型只在差距足够大的pair上学到有用信息。实际操作中，可以用RM给偏好对打分，过滤掉reward差距低于某个阈值的pair。</p>
 
-        <pre><code># DPO loss实现（简化版）
+        <pre style="overflow-x:auto"><code># DPO loss实现（简化版）
 def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
     """
     policy_logps: policy model对完整序列的log-probability
@@ -116,7 +207,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
             <p><strong>实践建议</strong>：DPO训练中最容易被忽视的一个点是"序列长度对齐"。当chosen回答和rejected回答长度差异很大时（比如chosen是详细解释，rejected是简短回答），长度短的回答天然会有更高的log-probability。这会干扰DPO的loss计算。建议通过length-normalization或者控制chosen/rejected的长度分布来解决这个问题。</p>
         </div>
 
-        <h3>17.3 DPO变体对比</h3>
+        <h2>17.3 DPO变体对比</h2>
 
         <p>DPO打开了"直接从偏好中优化"的大门，随后涌现了大量改进变体。这里对比几个最主流的：</p>
 
@@ -171,7 +262,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
             <p><strong>选型建议</strong>：如果你的团队刚刚开始做对齐，从最标准的DPO开始。DPO生态最成熟，文档和社区支持最好，有坑也容易查到解决方案。如果你觉得DPO的效果不够理想，再尝试切换到IPO（更稳定）或SimPO（去除对reference的依赖）。KTO尤其适合标注资源有限的场景。</p>
         </div>
 
-        <h3>17.4 Online vs Offline DPO</h3>
+        <h2>17.4 Online vs Offline DPO</h2>
 
         <p>标准的DPO是off-policy方法——它使用固定的偏好数据集进行训练，不依赖模型在训练过程中的实时生成。这与PPO的on-policy性质形成鲜明对比。off-policy的好处是训练快、成本低，但代价是数据分布不匹配：训练数据中的回答分布和当前policy的生成分布可能差异很大。</p>
 
@@ -179,7 +270,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
 
         <p>Iterative DPO的实践流程：</p>
 
-        <pre><code># Iterative DPO训练循环
+        <pre style="overflow-x:auto"><code># Iterative DPO训练循环
 @ 第0轮：用初始偏好数据集跑标准DPO，得到policy_v0
 @ 第1轮：用policy_v0生成新回答，RM标注偏好，DPO训练得policy_v1
 @ 第2轮：用policy_v1生成新回答，RM标注偏好，DPO训练得policy_v2
@@ -198,7 +289,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
             <p><strong>踩坑案例</strong>：我们有次跑迭代DPO时犯了一个低级错误——每一轮迭代都使用同一组prompt来生成新回答。结果发现经过3轮迭代后，模型对这组特定prompt的回答质量大幅提升，但在其他prompt上的表现却在退步。这就是典型的"prompt set overfitting"。解决方案是每一轮迭代都使用新采样的prompt集合，确保多样性。还有一个更隐蔽的问题：在线标注时标注者如果知道哪个回答是"新生成的"，可能会产生"锚定效应"，认为新的就是更好的。务必做blind evaluation。</p>
         </div>
 
-        <h3>17.5 DPO vs RLHF(PPO)实战对比</h3>
+        <h2>17.5 DPO vs RLHF(PPO)实战对比</h2>
 
         <p>这是目前对齐领域最常被问的问题：<strong>到底该用DPO还是PPO？</strong>我的回答是：没有银弹，但可以给你一个决策框架。</p>
 
@@ -257,12 +348,21 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
 
         <p>好了，第17章到这里就结束了。这一章我们从DPO的数学推导出发，理解了它是如何用精巧的变换绕开显式RM的；掌握了DPO训练中β参数、reference model选择、数据质量等关键实践；对比了DPO的主要变体——IPO、KTO、SimPO、ORPO——各自的特点和适用场景；分析了online和offline训练策略的取舍；最后给出了DPO和PPO在不同场景下的选型建议。偏好对齐方法的选择是一个动态的权衡过程，取决于你的数据、资源和业务目标。但无论选择哪条路，训练效率始终是一个重要的考量——下一章我们要讲的<strong>参数高效微调（PEFT）</strong>，就是关于如何用最小的计算代价实现有效的模型适配。下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Rafailov et al., <em>Direct Preference Optimization</em>, 2023 — <a href="https://arxiv.org/abs/2305.18290">arXiv:2305.18290</a>（17.1 节、公式 17-1）。</li>
+            <li>Azar et al., <em>IPO: A General Theoretical Paradigm to Understand Learning from Human Preferences</em>, 2023 — <a href="https://arxiv.org/abs/2310.12036">arXiv:2310.12036</a>（17.3 节 IPO）。</li>
+            <li>Ethayarajh et al., <em>KTO: Model Alignment as Prospect Theoretic Optimization</em>, 2024 — <a href="https://arxiv.org/abs/2402.01306">arXiv:2402.01306</a>（17.3 节 KTO）。</li>
+            <li>Meng et al., <em>SimPO: Simple Preference Optimization with a Reference-Free Reward</em>, 2024 — <a href="https://arxiv.org/abs/2405.14734">arXiv:2405.14734</a>（17.3 节 SimPO）。</li>
+            <li>Hong et al., <em>ORPO: Monolithic Preference Optimization without Reference Model</em>, 2024 — <a href="https://arxiv.org/abs/2403.07691">arXiv:2403.07691</a>（17.3 节 ORPO）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="16.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="18.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
