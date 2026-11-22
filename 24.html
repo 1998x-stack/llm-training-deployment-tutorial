@@ -6,10 +6,10 @@
     <title>第24章 推理优化技术</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,19 +41,29 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第24章 推理优化技术</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第24章 推理优化技术</h1>
 
         <p>大家好，我是你们的讲师。上一章我们讲了量化，把模型"瘦身"了。但瘦下来不等于跑得快——模型推理的瓶颈从来不只是权重的大小。在很多实际场景中，KV Cache能吃掉比权重更多的显存，attention计算的复杂度随序列长度平方级增长，GPU利用率可能只有个位数。这一章我们深入到<strong>推理优化</strong>的核心技术，让模型真正"跑起来"。</p>
 
         <p>讲个有意思的踩坑经历。之前帮一个做AI写作的团队做推理优化，他们的模型是Qwen-72B，部署在8张H100上，单次请求的平均生成长度在2,000 tokens左右。团队发现一个奇怪的现象：如果50个用户同时请求，延迟翻了好几倍——从500ms涨到了4秒。他们以为是模型推理太慢，花重金升级到16张卡，结果延迟只降到3秒。我一看监控，问题出在KV Cache上：并发请求一多，所有请求的KV Cache挤在一起，GPU上的显存带宽成了瓶颈。每次生成一个token都要读取全部KV Cache，请求越多，每个请求分到的有效带宽越少。解决方法是改用PagedAttention + 更高效的KV Cache管理——不升级硬件，单靠优化把并发延迟打回了1.5秒。这就是推理优化的魅力：<strong>不花一分钱硬件，延迟减半</strong>。</p>
 
-        <h3>24.1 KV Cache深入</h3>
+        <h2>24.1 KV Cache深入</h2>
 
         <p>KV Cache是自回归生成中最关键的优化。Transformer做推理时，每生成一个token都要计算当前token与之前所有token的attention。如果每步都重新算之前所有token的K和V，计算量会随着序列长度平方级增长。KV Cache的做法很简单：<strong>把之前每一步的K和V存下来，新的token只算自己的K和V，然后拼接到Cache里</strong>。这样每步的计算量从O(seq_len)降到O(1)。</p>
 
         <p><strong>KV Cache的内存占用。</strong>KV Cache是显存的"隐形杀手"。以LLaMA-70B为例（80层，GQA每组8个KV head，hidden_size=8192），每个token的KV Cache大小 = 2（K和V）× 80层 × 8个KV head × 8192 hidden / (8 head) × 2 bytes (FP16) = 2 × 80 × 8 × 1024 × 2 = 2.6 MB per token。听起来不多对吧？但如果有1,024个请求并发，每个请求生成2,048个token的回复，总KV Cache = 2.6 MB × 2048 × 1024 ≈ 5.5 TB。即使使用GQA后KV head数量大幅减少，KV Cache仍然是显存的最大占用者。实际上，在长序列、大batch推理中，KV Cache消耗的显存往往比模型权重还高。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="KV Cache 显存公式">
+            <math display="block" aria-label="M KV equals 2 times L times n sub kv times d sub h times b">
+                <mrow>
+                    <msub><mi>M</mi><mtext>KV</mtext></msub><mo>=</mo><mn>2</mn><mo>·</mo><mi>L</mi><mo>·</mo>
+                    <msub><mi>n</mi><mtext>kv</mtext></msub><mo>·</mo><msub><mi>d</mi><mtext>h</mtext></msub><mo>·</mo><mi>b</mi>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 24-1　单序列、单 token 的 KV Cache 字节数：L 为层数，n_kv 为 KV 头数，d_h 为每头维度，b 为每元素字节数（FP16=2），系数 2 来自 K 与 V 两份。以 LLaMA-70B 标准口径（L=80, n_kv=8, d_h=128, FP16）为例：2·80·8·128·2 = 327,680 B ≈ 0.31 MB/token；本节正文中的 2.6 MB 采用了不同的每头维度口径，逐 token 估算请以公式 24-1 为准（教学示意）。</span>
+        </div>
 
         <p><strong>PagedAttention（vLLM的虚拟内存管理）。</strong>PagedAttention是vLLM框架的核心创新，灵感来源于操作系统虚拟内存的分页机制。传统注意力机制中，KV Cache是按请求预先分配一块连续显存的——每个请求占据一个大块连续空间，这些空间之间有很多碎片，利用率很低。PagedAttention把KV Cache切分成固定大小的"页"（通常是16或32个token为一页），物理上不要求连续，通过页表来映射逻辑地址到物理地址。这个设计带来的好处非常显著：第一，消除了内部碎片——只需要分配实际用到的页。第二，允许内存共享——多个请求共享同一个prompt的KV Cache（这就是vLLM的Shared Prefix机制）。第三，请求级别的内存管理——一个请求结束后，它的页可以立即回收给其他请求。</p>
 
@@ -63,17 +73,88 @@
             <p><strong>KV Cache优化要点</strong>：对于生产部署，你至少需要考虑这三件事。第一，<strong>激活KV Cache量化</strong>——把KV Cache从FP16降到INT8甚至INT4，显存直接减半或减到四分之一，精度损失通常在0.5%以内。第二，<strong>Window Attention</strong>——不是所有历史token对当前token的影响都那么大，只保留最近N个token的KV Cache（比如4,096个），更早的丢弃。这种方法在长文档场景下特别有效。第三，<strong>Layer-wise KV Cache eviction</strong>——不同层的KV Cache重要性不同，底层可以多丢弃，顶层少丢弃。这三个技术组合使用，KV Cache的显存占用可以减少5-10倍。</p>
         </div>
 
-        <h3>24.2 投机解码(Speculative Decoding)</h3>
+        <h2>24.2 投机解码(Speculative Decoding)</h2>
 
         <p>大模型推理最大的瓶颈是什么？是<strong>逐token串行生成</strong>。即使batch再大、GPU再强，你也必须在生成完第N个token之后才能生成第N+1个。这个"串行依赖"从根本上限制了推理的吞吐量。投机解码就是用来打破这个瓶颈的。</p>
 
         <p><strong>小模型打草稿+大模型验证。</strong>核心思路其实很朴素：用一个小模型（draft model）快速地一次性生成K个候选token，然后让大模型（target model）对这些token做一次并行验证——只做一次前向传播，检查这K个token哪些可以接受，哪些需要重新生成。因为小模型的计算量远小于大模型，而大模型的验证是并行进行的（一次前向传播可以同时处理多个token），整个过程比大模型逐token生成快得多。</p>
 
+        <figure>
+            <svg viewBox="0 0 700 340" role="img" aria-labelledby="fig24-1-title fig24-1-desc">
+                <title id="fig24-1-title">投机解码的小模型打草稿与大模型并行验证</title>
+                <desc id="fig24-1-desc">小模型一次生成 K 个候选 token，大模型对整段候选做一次并行验证，接受匹配的前缀，在不匹配处从大模型分布重采样。</desc>
+                <defs>
+                    <marker id="fig24-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+                    </marker>
+                </defs>
+                <text x="20" y="26" font-size="14" font-weight="600" fill="#1d4ed8">阶段 1：小模型 Draft 打草稿</text>
+                <rect x="20" y="44" width="150" height="52" rx="10" fill="#dbeafe" stroke="#3b82f6"></rect>
+                <text x="95" y="75" text-anchor="middle" font-size="13" fill="#1e3a8a">小模型 Draft</text>
+                <line x1="170" y1="70" x2="203" y2="70" stroke="#64748b" stroke-width="2" marker-end="url(#fig24-1-arrow)"></line>
+                <rect x="208" y="48" width="40" height="44" rx="7" fill="#eff6ff" stroke="#93c5fd"></rect><text x="228" y="76" text-anchor="middle" font-size="13" fill="#1e3a8a">t₁</text>
+                <rect x="254" y="48" width="40" height="44" rx="7" fill="#eff6ff" stroke="#93c5fd"></rect><text x="274" y="76" text-anchor="middle" font-size="13" fill="#1e3a8a">t₂</text>
+                <rect x="300" y="48" width="40" height="44" rx="7" fill="#eff6ff" stroke="#93c5fd"></rect><text x="320" y="76" text-anchor="middle" font-size="13" fill="#1e3a8a">t₃</text>
+                <rect x="346" y="48" width="40" height="44" rx="7" fill="#eff6ff" stroke="#93c5fd"></rect><text x="366" y="76" text-anchor="middle" font-size="13" fill="#1e3a8a">t₄</text>
+                <rect x="392" y="48" width="40" height="44" rx="7" fill="#eff6ff" stroke="#93c5fd"></rect><text x="412" y="76" text-anchor="middle" font-size="13" fill="#1e3a8a">t₅</text>
+                <text x="448" y="76" font-size="12" fill="#1e3a8a">K=5 个候选（一次生成）</text>
+                <line x1="20" y1="128" x2="680" y2="128" stroke="#cbd5e1" stroke-width="1.5"></line>
+                <text x="20" y="160" font-size="14" font-weight="600" fill="#6d28d9">阶段 2：大模型 Target 一次前向并行验证</text>
+                <rect x="20" y="178" width="150" height="52" rx="10" fill="#ede9fe" stroke="#8b5cf6"></rect>
+                <text x="95" y="209" text-anchor="middle" font-size="13" fill="#4c1d95">大模型 Target</text>
+                <line x1="170" y1="204" x2="203" y2="204" stroke="#64748b" stroke-width="2" marker-end="url(#fig24-1-arrow)"></line>
+                <rect x="208" y="182" width="40" height="44" rx="7" fill="#dcfce7" stroke="#22c55e"></rect><text x="228" y="210" text-anchor="middle" font-size="13" fill="#15803d">✓</text>
+                <rect x="254" y="182" width="40" height="44" rx="7" fill="#dcfce7" stroke="#22c55e"></rect><text x="274" y="210" text-anchor="middle" font-size="13" fill="#15803d">✓</text>
+                <rect x="300" y="182" width="40" height="44" rx="7" fill="#dcfce7" stroke="#22c55e"></rect><text x="320" y="210" text-anchor="middle" font-size="13" fill="#15803d">✓</text>
+                <rect x="346" y="182" width="40" height="44" rx="7" fill="#fee2e2" stroke="#ef4444"></rect><text x="366" y="210" text-anchor="middle" font-size="13" fill="#b91c1c">✗</text>
+                <rect x="392" y="182" width="40" height="44" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="412" y="210" text-anchor="middle" font-size="13" fill="#94a3b8">—</text>
+                <text x="448" y="205" font-size="12" fill="#15803d">接受 t₁–t₃</text>
+                <text x="448" y="223" font-size="12" fill="#b91c1c">t₄ 不匹配→重采样，丢弃 t₅</text>
+                <text x="20" y="278" font-size="12" fill="#475569">一次 target 前向 = 多一个被接受的 token（此处 3 个）→ 打破逐 token 串行瓶颈</text>
+                <text x="20" y="300" font-size="12" fill="#475569">接受率越高、K 调得越合适，加速比越大；draft 太慢或分布偏差大反而拖慢</text>
+            </svg>
+            <figcaption>图 24-1　投机解码流程：小模型一次生成 K 个候选 token（draft），大模型对整段候选做一次并行验证，接受与 target 分布匹配的前缀，遇到不匹配处从 target 分布重采样。一次 target 前向可换取多个被接受的 token，从而打破逐 token 串行瓶颈。流程依据 Leviathan 等 2023（arXiv:2211.17192）；K 与接受率为示意。</figcaption>
+        </figure>
+
         <p><strong>Draft Model选择。</strong>draft model的选择直接影响投机解码的加速效果。理想情况下，draft model应该满足三个条件：第一，<strong>快</strong>——draft model的推理速度至少是target model的5-10倍，这通常意味着参数量在target model的1/10以下。第二，<strong>准</strong>——draft model和target model的生成分布要足够接近，否则接受率低，加速效果差。第三，<strong>够小</strong>——能塞进target model的剩余显存，不需要额外的GPU。在实践中，最常见的组合是：target model用70B，draft model用7B（或者更激进的2B）。如果draft model和target model来自同一个模型族（比如LLaMA-70B配LLaMA-7B），接受率通常在60-80%。如果来自不同族，接受率可能降到30%以下，加速效果就不明显了。</p>
 
         <p><strong>接受率优化。</strong>投机解码的核心指标是接受率（acceptance rate）。接受率越高，需要重跑的token越少，加速比越大。优化接受率的方法主要有三种。第一，<strong>Fine-tune draft model</strong>——用target model的输出分布来蒸馏draft model，让两个模型的分布更对齐。第二，<strong>动态调整草稿长度K</strong>——不是固定生成K个token，而是动态调整：如果前几步接受率高，增加K；如果接受率低，减小K。第三，<strong>树状投机解码（Tree-based Speculative Decoding）</strong>——不生成单一的token序列，而是生成一个包含多条候选路径的"tree"，大模型在这个tree上做并行验证。这种方法在target model输出分布不确定性高的时候特别有效。</p>
 
-        <pre><code># 投机解码核心逻辑（伪代码）
+        <div class="widget" id="spec-widget">
+            <p><strong>投机解码的收益估计</strong>　每轮小模型生成 K 个候选、大模型一次并行验证。设接受率为 α，平均每轮被接受的 token 数 E = (1−α^(K+1)) / (1−α)；粗略加速比 ≈ E / (1 + c·K)，c 为 draft 相对 target 的开销（取 c=0.1，教学示意）。</p>
+            <label for="spec-a">接受率 α：<output id="spec-a-out">0.70</output></label>
+            <input id="spec-a" type="range" min="0" max="0.99" step="0.01" value="0.7" aria-label="接受率">
+            <label for="spec-k">草稿长度 K：<output id="spec-k-out">5</output></label>
+            <input id="spec-k" type="range" min="1" max="10" step="1" value="5" aria-label="草稿长度">
+            <button type="button" id="spec-preset">典型配置（α = 0.8、K = 6）</button>
+            <p class="readout" id="spec-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var alpha = 0.7, K = 5, c = 0.1;
+            var out = document.getElementById('spec-out');
+            var aOut = document.getElementById('spec-a-out'), kOut = document.getElementById('spec-k-out');
+            function render() {
+                var E = (1 - Math.pow(alpha, K + 1)) / (1 - alpha);
+                var speed = E / (1 + c * K);
+                out.textContent = '平均每轮接受 token 数 E ≈ ' + E.toFixed(2) + '；粗略加速比 ≈ '
+                    + speed.toFixed(2) + '×（已计入 draft 开销 c·K = ' + (c * K).toFixed(2)
+                    + '）。α 或 K 太小则加速有限，draft 太慢还会净亏损。';
+                aOut.textContent = alpha.toFixed(2);
+                kOut.textContent = K;
+            }
+            document.getElementById('spec-a').addEventListener('input', function (e) { alpha = +e.target.value; render(); });
+            document.getElementById('spec-k').addEventListener('input', function (e) { K = +e.target.value; render(); });
+            document.getElementById('spec-preset').addEventListener('click', function () {
+                alpha = 0.8; K = 6;
+                document.getElementById('spec-a').value = 0.8;
+                document.getElementById('spec-k').value = 6; render();
+            });
+            render();
+        })();
+        </script>
+
+        <pre style="overflow-x:auto"><code># 投机解码核心逻辑（伪代码）
 def speculative_decoding(target_model, draft_model, prompt, K=5):
     # 用target model对prompt做一次prefill
     target_kv_cache = target_model.prefill(prompt)
@@ -117,7 +198,7 @@ def speculative_decoding(target_model, draft_model, prompt, K=5):
             <p><strong>实战数据</strong>：在我的测试中，使用LLaMA-70B配LLaMA-7B作为draft model，在H100上投机解码（K=5）的端到端加速比约为1.8-2.5x。加速比随batch size增大而下降——在小batch下（batch=1）提升明显，大batch下由于GPU利用率已经很高，提升空间变小。另外，投机解码对<strong>短序列生成</strong>（<50 tokens）几乎没有加速——prefill开销占主导，草稿生成的时间折扣不够。最适合的是100-1,000 tokens的中等长度生成场景。</p>
         </div>
 
-        <h3>24.3 FlashAttention系列</h3>
+        <h2>24.3 FlashAttention系列</h2>
 
         <p>FlashAttention是近年来对Transformer推理影响最深远的优化之一。它不是一个算法，而是一个<strong>IO-aware的精确attention计算方法</strong>，目标是用更少的高带宽内存（HBM）访问来完成attention计算。它的核心洞察是：attention的计算瓶颈不是FLOPs，而是内存带宽。</p>
 
@@ -127,6 +208,7 @@ def speculative_decoding(target_model, draft_model, prompt, K=5):
 
         <p><strong>FlashAttention-3：FP8和低精度加速。</strong>FlashAttention-3是2025年的最新版本，主要针对H100的FP8 Tensor Core做了深度优化。它引入了三个关键技术。第一，<strong>异步处理</strong>：把数据从HBM搬运到SRAM和SRAM上的计算重叠起来，隐藏memory latency。第二，<strong>FP8块内缩放</strong>：在tiling的基础上，对每个tile使用独立的FP8 scaling factor，避免了标准FP8量化中一个序列内数值范围差异大的问题。第三，<strong>低精度OFA（Online Fused Attention）</strong>：把attention计算链路的多个操作（缩放、mask、softmax）融合成一个FP8 kernel，进一步减少HBM访问。在H100上，FlashAttention-3比FlashAttention-2快1.5-2倍。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>版本</th>
@@ -157,10 +239,11 @@ def speculative_decoding(target_model, draft_model, prompt, K=5):
                 <td>H100+</td>
             </tr>
         </table>
+        </div>
 
         <p>FlashAttention对长序列推理的加速尤为显著。在256K token的序列上，标准attention需要512 GB的HBM（仅中间S矩阵），这远远超出了任何单卡的显存。而FlashAttention通过tiling把中间结果保留在SRAM中，理论上可以处理任意长度的序列——实际限制仅来自模型本身的计算量。LongLoRA、YaRN等长上下文工作都依赖FlashAttention的实现。</p>
 
-        <h3>24.4 Continuous Batching</h3>
+        <h2>24.4 Continuous Batching</h2>
 
         <p>在传统的推理服务中，batching策略通常是"静态"的：收集一批请求，同时开始推理，等所有请求都完成后一起返回。这叫做静态批处理（static batching）。但LLM推理有个特殊之处——<strong>每个请求的生成长度差异巨大</strong>。有的请求只生成"是的"两个字，有的请求生成2,000字的一篇文章。在静态批处理中，第一批最长的请求决定了整批的完成时间，短请求生成完后也得干等。这导致GPU利用率曲线像一个"锯齿"：忙碌期满载运行，空闲期全在等IO。</p>
 
@@ -170,7 +253,7 @@ def speculative_decoding(target_model, draft_model, prompt, K=5):
 
         <p><strong>调度策略对比。</strong>三种batching方案的差异很明显。静态批处理实现简单，但在生成长度差异大的场景下效率极低。动态批处理（DCGM监控到批大小动态变化，但仍是"等一批全做完"）比静态好一些，但仍有空闲浪费。Continuous batching实现了真正的"流水线化"，是当前最先进的方案。vLLM、TensorRT-LLM、SGLang等主流引擎都支持continuous batching。</p>
 
-        <pre><code># Continuous Batching调度伪代码
+        <pre style="overflow-x:auto"><code># Continuous Batching调度伪代码
 class ContinuousBatchingScheduler:
     def __init__(self, max_batch_size=64):
         self.running = []   # 当前正在生成的请求
@@ -199,10 +282,11 @@ class ContinuousBatchingScheduler:
 
         return [req.output for req in finished]</code></pre>
 
-        <h3>24.5 推理优化全景对比</h3>
+        <h2>24.5 推理优化全景对比</h2>
 
         <p>现在我们把本章讲的所有技术放到一起，从加速比、适用场景、组合效果三个维度做个全面的比较。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>技术</th>
@@ -247,6 +331,7 @@ class ContinuousBatchingScheduler:
                 <td>任何在线服务必选</td>
             </tr>
         </table>
+        </div>
 
         <p><strong>组合使用效果。</strong>这些技术不是互斥的而是互补的，叠在一起能产生乘数效应。我们来看一个典型的生产环境配置。模型用FP8量化（上一章内容）+ FlashAttention（减少attention计算量）+ PagedAttention（高效管理KV Cache）+ KV Cache INT8量化（进一步压缩KV Cache）+ Continuous Batching（让GPU永远不闲着）+ 投机解码（降低单请求延迟）。这样一套组合拳下来，相对于FP16 + 标准Attention + 静态批处理的baseline，整体吞吐量可以提升5-10倍，延迟降低3-5倍。</p>
 
@@ -260,12 +345,21 @@ class ContinuousBatchingScheduler:
 
         <p>好了，第24章的内容就到这儿。这一章我们深入了推理优化的关键技术：从KV Cache的显存管理（PagedAttention、Prefix Cache），到投机解码的草稿-验证机制，再到改变attention计算模式的FlashAttention系列，最后是更高效的Continuous Batching调度和全景对比。你会发现，<strong>推理优化是一个"组合拳"——没有银弹，每一项技术都在特定的场景下发光</strong>。<strong>第25章「推理引擎与服务架构」</strong>，我们把视野再放大一些，看看这些优化技术是如何在vLLM、SGLang、TensorRT-LLM这些引擎中被实现的，以及如何设计一个生产级的推理服务架构。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Kwon et al., <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>, 2023 — <a href="https://arxiv.org/abs/2309.06180">arXiv:2309.06180</a>（24.1 节 PagedAttention / vLLM）。</li>
+            <li>Dao et al., <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em>, 2022 — <a href="https://arxiv.org/abs/2205.14135">arXiv:2205.14135</a>（24.3 节 FlashAttention）。</li>
+            <li>Dao, <em>FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning</em>, 2023 — <a href="https://arxiv.org/abs/2307.08691">arXiv:2307.08691</a>（24.3 节）。</li>
+            <li>Leviathan et al., <em>Fast Inference from Transformers via Speculative Decoding</em>, 2022 — <a href="https://arxiv.org/abs/2211.17192">arXiv:2211.17192</a>（24.2 节接受数与加速比推导）。</li>
+            <li>Chen et al., <em>Accelerating Large Language Model Decoding with Speculative Sampling</em>, 2023 — <a href="https://arxiv.org/abs/2302.01318">arXiv:2302.01318</a>（24.2 节投机采样）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="23.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="25.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
