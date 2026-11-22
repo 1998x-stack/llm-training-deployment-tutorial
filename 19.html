@@ -6,10 +6,10 @@
     <title>第19章 RLVR与推理增强技术</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第19章 RLVR与推理增强技术</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第19章 RLVR与推理增强技术</h1>
 
         <p>大家好，我是你们的讲师。在上一章我们聊了PEFT，了解了如何用小成本微调大模型。但大家有没有想过一个问题：SFT教模型"答对"，但没教模型"想对"。你给模型一个数学题，它在SFT数据里见过类似题就能答对，换个没见过但需要推理的题就崩了。这就像你让学生把习题集的答案全背下来，考试时题目一换就傻眼。</p>
 
         <p>2025年初，DeepSeek-R1的发布彻底改变了这个局面。它证明了一个激动人心的事实：<strong>推理能力是可以被"训练"出来的</strong>——而且不需要人工标注思考过程。取而代之的是一套全新的训练范式：RLVR（Reinforcement Learning with Verifiable Rewards）。这一章我们就来深入拆解这个范式背后的算法、实践和前沿进展。</p>
 
-        <h3>19.1 RLVR的核心思想</h3>
+        <h2>19.1 RLVR的核心思想</h2>
 
         <p>RLVR的全称是<strong>Reinforcement Learning with Verifiable Rewards</strong>，翻译过来就是"可验证奖励的强化学习"。它的核心思路非常朴素：我不需要知道正确答案的推理过程是什么，我只需要能判断最终答案是对是错——然后让模型自己"悟"出正确的思考路径。</p>
 
@@ -94,13 +94,61 @@
             <p><strong>核心洞察</strong>：RLVR最被低估的价值不是训练效率，而是数据飞轮。传统SFT每一条数据都需要人类写出"高质量的思考过程"，而RLVR只需要"最终答案的对错"。这意味着你可以在数学网站、编程题库、科学竞赛数据库里自动获取几乎无限量的训练信号。一个团队告诉我，他们用RLVR在3万道自动验证的数学题上训练后，模型在未见过题型上的推理准确率提升了37%。如果这3万条数据都要人工写推理过程，成本至少是百万级别。</p>
         </div>
 
-        <h3>19.2 GRPO算法深度</h3>
+        <h2>19.2 GRPO算法深度</h2>
 
         <p>RLVR说起来简单，实际操作中有一个核心难题：<strong>怎么从稀疏的reward信号中高效地学习策略？</strong>传统PPO算法需要同时维护一个价值网络（Value Model）来估计baseline，这个价值网络的训练本身就需要大量数据和计算资源。DeepSeek团队提出了一种更优雅的解决方案——<strong>GRPO（Group Relative Policy Optimization）</strong>。</p>
 
+        <figure>
+            <svg viewBox="0 0 700 290" role="img" aria-labelledby="fig19-1-title fig19-1-desc">
+                <title id="fig19-1-title">GRPO 的组内归一化与相对优势</title>
+                <desc id="fig19-1-desc">同一个 prompt 采样 4 个回答，用组内 reward 的均值和标准差把绝对 reward 转成相对优势，高于组均值者得正优势、低于者得负优势。</desc>
+                <defs>
+                    <marker id="fig19-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+                    </marker>
+                </defs>
+                <rect x="20" y="24" width="150" height="42" rx="10" fill="#fef3c7" stroke="#f59e0b"></rect>
+                <text x="95" y="51" text-anchor="middle" font-size="13" fill="#92400e">prompt x</text>
+                <text x="200" y="42" font-size="12" fill="#64748b">一组 G=4 个采样（同 prompt）</text>
+                <line x1="170" y1="45" x2="98" y2="94" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#fig19-1-arrow)"></line>
+                <line x1="170" y1="45" x2="258" y2="94" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#fig19-1-arrow)"></line>
+                <line x1="170" y1="45" x2="418" y2="94" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#fig19-1-arrow)"></line>
+                <line x1="170" y1="45" x2="578" y2="94" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#fig19-1-arrow)"></line>
+                <rect x="30" y="98" width="140" height="46" rx="9" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="100" y="127" text-anchor="middle" font-size="13" fill="#15803d">o₁  r₁=1 ✓</text>
+                <rect x="190" y="98" width="140" height="46" rx="9" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="260" y="127" text-anchor="middle" font-size="13" fill="#15803d">o₂  r₂=1 ✓</text>
+                <rect x="350" y="98" width="140" height="46" rx="9" fill="#fee2e2" stroke="#ef4444"></rect>
+                <text x="420" y="127" text-anchor="middle" font-size="13" fill="#b91c1c">o₃  r₃=0 ✗</text>
+                <rect x="510" y="98" width="140" height="46" rx="9" fill="#fee2e2" stroke="#ef4444"></rect>
+                <text x="580" y="127" text-anchor="middle" font-size="13" fill="#b91c1c">o₄  r₄=0 ✗</text>
+                <text x="30" y="170" font-size="12" fill="#475569">组内统计：mean(r)=0.5，std(r)=0.5</text>
+                <text x="100" y="192" text-anchor="middle" font-size="13" font-weight="600" fill="#15803d">A₁=+1.0</text>
+                <text x="260" y="192" text-anchor="middle" font-size="13" font-weight="600" fill="#15803d">A₂=+1.0</text>
+                <text x="420" y="192" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">A₃=−1.0</text>
+                <text x="580" y="192" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">A₄=−1.0</text>
+                <text x="30" y="226" font-size="12" fill="#475569">高于组均值 → 正优势（强化）；低于 → 负优势（抑制）——无需 value network</text>
+                <text x="30" y="248" font-size="12" fill="#b45309">组内全对或全错 → std=0 → 优势全为 0、无梯度信号，需按难度分层采样</text>
+            </svg>
+            <figcaption>图 19-1　GRPO 的组内归一化：同一个 prompt 采样 G 个回答，用组内 reward 的均值与标准差把绝对 reward 转成相对优势 Aᵢ=(rᵢ−mean)/std，高于组均值者被强化、低于者被抑制，从而省去 PPO 的 value network。当组内全对或全错时 std=0、优势全为 0，没有梯度信号，因此需要按难度分层采样（GRPO 出自 DeepSeekMath，Shao 等 2024）。G=4、reward 取值 {0,1} 为教学示意。</figcaption>
+        </figure>
+
         <p>GRPO的核心创新是<strong>group normalization</strong>。它对同一个prompt采样多个response（比如一组8个），然后用这组response的reward均值作为baseline，而不是依赖一个独立的value network。这样一来，PPO中那个又大又难训的value model就被彻底干掉了。</p>
 
-        <pre><code># GRPO loss的简化示意
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="GRPO 组内相对优势公式">
+            <math display="block" aria-label="A sub i equals r sub i minus the mean of the group, divided by the standard deviation of the group">
+                <mrow>
+                    <msub><mi>A</mi><mi>i</mi></msub><mo>=</mo>
+                    <mfrac>
+                        <mrow><msub><mi>r</mi><mi>i</mi></msub><mo>−</mo><mi>mean</mi><mo>(</mo><msub><mi>r</mi><mn>1</mn></msub><mo>,</mo><mo>…</mo><mo>,</mo><msub><mi>r</mi><mi>G</mi></msub><mo>)</mo></mrow>
+                        <mrow><mi>std</mi><mo>(</mo><msub><mi>r</mi><mn>1</mn></msub><mo>,</mo><mo>…</mo><mo>,</mo><msub><mi>r</mi><mi>G</mi></msub><mo>)</mo></mrow>
+                    </mfrac>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 19-1　GRPO 组内相对优势：rᵢ 为第 i 个回答的可验证 reward，分母为组内标准差。当 std=0（全对或全错）时优势无定义，应按 0 处理（无梯度信号）。</span>
+        </div>
+
+        <pre style="overflow-x:auto"><code># GRPO loss的简化示意
 # 对于同一个prompt，采样一组response {o1, o2, ..., oG}
 # 每个response的reward为 {r1, r2, ..., rG}
 
@@ -126,7 +174,45 @@ total_loss = sum(loss_i for i in 1..G) / G</code></pre>
             <p><strong>实践建议</strong>：GRPO的group size是一个关键超参数。太小（比如2-4）的话baseline不够稳定，太大（比如64+）的话计算开销剧增。根据DeepSeek-R1论文和社区实践，8-16是最常用的区间。另外注意同一个batch内不同prompt的难度差异——如果一个prompt简单到所有response都答对、另一个难到全军覆没，group内的variance会很低，advantage也不够有区分度。建议在数据准备阶段就把题目按难度分层，每个group内尽量同质。</p>
         </div>
 
-        <h3>19.3 DeepSeek-R1训练管线</h3>
+        <div class="widget" id="grpo-widget">
+            <p><strong>算一算组内优势</strong>　点击 4 个回答标记“答对/答错”（可验证 reward 取 1/0），实时看 GRPO 的组内均值、标准差与相对优势 Aᵢ。</p>
+            <div role="group" aria-label="四个回答的对错">
+                <button type="button" data-i="0" aria-pressed="true">回答 1：对</button>
+                <button type="button" data-i="1" aria-pressed="true">回答 2：对</button>
+                <button type="button" data-i="2" aria-pressed="false">回答 3：错</button>
+                <button type="button" data-i="3" aria-pressed="false">回答 4：错</button>
+            </div>
+            <p class="readout" id="grpo-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var r = [1, 1, 0, 0], w = document.getElementById('grpo-widget');
+            var out = document.getElementById('grpo-out');
+            function render() {
+                var G = r.length, mean = r.reduce(function (a, b) { return a + b; }, 0) / G;
+                var varr = r.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / G;
+                var std = Math.sqrt(varr);
+                var A = std < 1e-9 ? r.map(function () { return 0; })
+                    : r.map(function (x) { return (x - mean) / std; });
+                out.textContent = 'mean(r)=' + mean.toFixed(3) + '，std(r)=' + std.toFixed(3)
+                    + '；优势 A = [' + A.map(function (a) { return (a >= 0 ? '+' : '') + a.toFixed(2); }).join(', ')
+                    + ']。' + (std < 1e-9 ? '　组内全对或全错 → 无梯度信号，需按难度分层采样。' : '');
+                w.querySelectorAll('button[data-i]').forEach(function (b) {
+                    var i = +b.getAttribute('data-i');
+                    b.setAttribute('aria-pressed', String(r[i] === 1));
+                    b.textContent = '回答 ' + (i + 1) + '：' + (r[i] === 1 ? '对' : '错');
+                });
+            }
+            w.querySelectorAll('button[data-i]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var i = +b.getAttribute('data-i'); r[i] = r[i] === 1 ? 0 : 1; render();
+                });
+            });
+            render();
+        })();
+        </script>
+
+        <h2>19.3 DeepSeek-R1训练管线</h2>
 
         <p>DeepSeek-R1是RLVR路线最标志性的工作。它的训练管线分为四个阶段，每个阶段的精心设计都值得仔细拆解。</p>
 
@@ -175,7 +261,7 @@ total_loss = sum(loss_i for i in 1..G) / G</code></pre>
             <p><strong>踩坑案例</strong>：有个团队在复现R1方案时，跳过冷启动直接上RLVR。他们觉得"反正RL能让model自己学会，省掉写样例的麻烦"。结果训练了两周，模型输出全是诸如"让我们一步一步思考（首先，我们需要分析这个问题...（停顿）...好的，让我再检查一遍...）"这种冗余循环，推理链特别长但答案经常是错的——模型学会了"装模作样地思考"而不是真正的推理。这就是缺了冷启动的后果：模型在探索空间里迷失了方向，reward signal太稀疏导致它找不到正确的行为模式。几千条冷启动数据就是"路标"，引导模型往正确的方向探索。</p>
         </div>
 
-        <h3>19.4 "Aha Moment"现象</h3>
+        <h2>19.4 "Aha Moment"现象</h2>
 
         <p>DeepSeek-R1的训练过程中出现了一个让研究者都感到惊讶的现象——<strong>"Aha Moment"</strong>。在RL训练的中后期，模型开始自发地展现出一些从未被明确训练过的行为：它会重新读题、会检查自己的计算、会在发现错误后回溯修正，甚至会在推理过程中对自己说"等等，让我再验证一下这个步骤"。</p>
 
@@ -189,13 +275,13 @@ total_loss = sum(loss_i for i in 1..G) / G</code></pre>
 
         <p>在工程实践中，我们也可以主动设计一些"促进涌现"的奖励信号来实现Aha Moment。比如给"包含自我验证步骤"的推理过程额外加分，或者设计prompt template时预留&lt;check&gt;标签的位置。不过要注意尺度的把握——如果奖励系数过高，模型会变成"过度检查强迫症"：每做一步都要检查三次，推理链膨胀到数万token，反而降低了有效推理的密度。</p>
 
-        <h3>19.5 Test-time Compute</h3>
+        <h2>19.5 Test-time Compute</h2>
 
         <p>训练出推理能力之后，下一个自然的问题就是：<strong>推理时能不能用更多的计算来换取更好的效果？</strong>这就是<strong>Test-time Compute（推理时计算扩展）</strong>的范畴。你可以把它理解为"考试时多花时间检查"——在推理阶段投入更多计算资源，让模型在多个候选中选择最佳答案，或者在更广的搜索空间中寻找正确路径。</p>
 
         <p><strong>Best-of-N采样</strong>是最简单有效的方法。对同一个prompt采样N个response，然后用验证器（verifier）选取reward最高的那个。这个方法的效果随着N的增大呈现对数增长——N从1到16的提升很明显，但从16到256的提升就放缓了。在DeepSeek-R1的设置中，Best-of-64相比单次采样在数学推理准确率上提升了大约8-12个百分点。</p>
 
-        <pre><code># Best-of-N with verifier
+        <pre style="overflow-x:auto"><code># Best-of-N with verifier
 def best_of_n(prompt, model, verifier, n=16):
     candidates = []
     for i in range(n):
@@ -257,12 +343,20 @@ def prm_beam_search(prompt, model, prm, beam_width=4, max_steps=8):
 
         <p>RLVR和推理增强技术正在重塑整个LLM训练范式。以前我们关注的是"模型知道什么"，现在关注的是"模型怎么思考"。这个转变的意义不亚于从"统计语言模型"到"预训练-微调"的跃迁。下一章我们要聊<strong>第20章「指令微调与Agent能力」</strong>，从推理的"内部思考"走向Agent的"外部行动"——不仅要让模型会想，还要让它会用工具、会对话、会规划。这是通往AGI路上必不可少的一步，咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>DeepSeek-AI, <em>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</em>, 2025 — <a href="https://arxiv.org/abs/2501.12948">arXiv:2501.12948</a>（19.3 节训练管线、19.4 节 Aha Moment）。</li>
+            <li>Shao et al., <em>DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</em>, 2024 — <a href="https://arxiv.org/abs/2402.03300">arXiv:2402.03300</a>（19.2 节 GRPO、公式 19-1）。</li>
+            <li>Schulman et al., <em>Proximal Policy Optimization Algorithms</em>, 2017 — <a href="https://arxiv.org/abs/1707.06347">arXiv:1707.06347</a>（PPO 基线）。</li>
+            <li>Lightman et al., <em>Let's Verify Step by Step</em>, 2023 — <a href="https://arxiv.org/abs/2305.20050">arXiv:2305.20050</a>（过程监督 / verifier）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="18.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="20.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
