@@ -6,10 +6,10 @@
     <title>第4章 Transformer架构深度解析</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第4章 Transformer架构深度解析</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第4章 Transformer架构深度解析</h1>
 
         <p>大家好，我是你们的讲师。前两章我们把数据的准备工作做完了（数据清洗和tokenizer），现在终于到了模型本身。Transformer架构是当代大模型的"心脏"，不管是GPT、Llama、DeepSeek还是Qwen，底层都是Transformer的各种变体。理解Transformer的每一个组件，是训练大模型的必修课。</p>
 
         <p>但注意，我不是要给你念论文。我会从<strong>训练和推理的工程视角</strong>来拆解Transformer：每个组件为什么这么设计？它在反向传播时有什么特性？不同的变体对训练效率和收敛速度有什么影响？这些才是你在实际训练中需要做的决策。之前我带过一个团队，他们完全套用了BERT的架构去训练一个生成式模型，结果收敛得非常慢。问题出在哪？核心原因是<strong>BERT用的是Post-Norm，而生成式模型用Pre-Norm收敛更快</strong>。这种"细节"决定成败的情况在Transformer中比比皆是。</p>
 
-        <h3>4.1 Attention is All You Need</h3>
+        <h2>4.1 Attention is All You Need</h2>
 
         <p>Self-Attention是Transformer的"灵魂"。它解决了RNN的核心痛点——无法并行化。对于"我喜欢吃苹果"这句话，RNN要一个词一个词地读过去才能知道"我"和"苹果"的关系，而self-attention一步到位，让每个位置都能直接"看到"所有其他位置。</p>
 
@@ -57,7 +57,61 @@
 
         <p>这里有一个容易忽视的细节：<strong>除以sqrt(d_k)的必要性</strong>。当d_k很大时，Q和K的点积的方差会变大，导致softmax的梯度趋于极小（softmax进入饱和区）。缩放后，梯度流动得到保证。这个"小技巧"对训练的稳定性有决定性影响——如果你自己实现attention时忘记缩放，训练大概率会炸掉。</p>
 
-        <pre><code>import torch.nn.functional as F
+        <figure>
+            <svg viewBox="0 0 700 420" role="img" aria-labelledby="fig4-1-title fig4-1-desc">
+                <title id="fig4-1-title">Pre-Norm 解码器层的数据流</title>
+                <desc id="fig4-1-desc">输入依次经过 RMSNorm、GQA 自注意力、残差相加、RMSNorm、SwiGLU 前馈网络与再次残差相加，得到输出。左侧与右侧虚线为两条恒等残差分支。</desc>
+                <defs>
+                    <marker id="fig4-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+                    </marker>
+                </defs>
+                <text x="350" y="20" text-anchor="middle" font-size="14" fill="#334155">输入 x<sub>t</sub></text>
+                <line x1="350" y1="28" x2="350" y2="44" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <rect x="230" y="46" width="240" height="40" rx="10" fill="#fef3c7" stroke="#f59e0b"></rect>
+                <text x="350" y="71" text-anchor="middle" font-size="14" fill="#92400e">RMSNorm（Pre-Norm）</text>
+                <line x1="350" y1="86" x2="350" y2="104" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <rect x="230" y="106" width="240" height="46" rx="10" fill="#ede9fe" stroke="#8b5cf6"></rect>
+                <text x="350" y="134" text-anchor="middle" font-size="14" fill="#4c1d95">GQA 自注意力（h=32, g=8）</text>
+                <line x1="350" y1="152" x2="350" y2="172" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <circle cx="350" cy="188" r="13" fill="#ffffff" stroke="#64748b" stroke-width="2"></circle>
+                <text x="350" y="193" text-anchor="middle" font-size="15" fill="#334155">+</text>
+                <line x1="350" y1="201" x2="350" y2="220" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <rect x="230" y="222" width="240" height="40" rx="10" fill="#fef3c7" stroke="#f59e0b"></rect>
+                <text x="350" y="247" text-anchor="middle" font-size="14" fill="#92400e">RMSNorm</text>
+                <line x1="350" y1="262" x2="350" y2="280" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <rect x="230" y="282" width="240" height="46" rx="10" fill="#ccfbf1" stroke="#14b8a6"></rect>
+                <text x="350" y="310" text-anchor="middle" font-size="14" fill="#115e59">SwiGLU FFN（d_ff = 4d）</text>
+                <line x1="350" y1="328" x2="350" y2="348" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <circle cx="350" cy="364" r="13" fill="#ffffff" stroke="#64748b" stroke-width="2"></circle>
+                <text x="350" y="369" text-anchor="middle" font-size="15" fill="#334155">+</text>
+                <line x1="350" y1="377" x2="350" y2="396" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig4-1-arrow)"></line>
+                <text x="350" y="412" text-anchor="middle" font-size="14" fill="#334155">输出 h<sub>t</sub></text>
+                <path d="M230 66 L140 66 L140 188 L335 188" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fig4-1-arrow)"></path>
+                <path d="M363 188 L560 188 L560 364 L365 364" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fig4-1-arrow)"></path>
+            </svg>
+            <figcaption>图 4-1　Pre-Norm 解码器层的数据流：输入先归一化后进入 GQA 自注意力，残差相加后再归一化进入 SwiGLU 前馈网络，第二次残差相加得到输出。虚线为两条恒等残差分支，它们让梯度不经归一化直接回传，是 Pre-Norm 能稳定训练深层网络的关键。注意力头分组 h=32、g=8 与 FFN 扩张 d_ff=4d 是 LLaMA / DeepSeek / Qwen 等公开实现中的常见设定（具体比例随模型而异，此处为教学示意）。</figcaption>
+        </figure>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="缩放点积注意力公式">
+            <math display="block" aria-label="Attention of Q, K, V equals softmax of Q times K transpose divided by square root of d sub k, times V">
+                <mrow>
+                    <mi>Attention</mi>
+                    <mo>(</mo><mi>Q</mi><mo>,</mo><mi>K</mi><mo>,</mo><mi>V</mi><mo>)</mo>
+                    <mo>=</mo>
+                    <mi>softmax</mi>
+                    <mo>(</mo>
+                    <mfrac>
+                        <mrow><mi>Q</mi><msup><mi>K</mi><mo>⊤</mo></msup></mrow>
+                        <msqrt><msub><mi>d</mi><mi>k</mi></msub></msqrt>
+                    </mfrac>
+                    <mo>)</mo><mi>V</mi>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 4-1　缩放点积注意力（源自 Vaswani 等，2017，第 3.2.1 节）</span>
+        </div>
+
+        <pre style="overflow-x:auto"><code>import torch.nn.functional as F
 
 def scaled_dot_product_attention(Q, K, V, mask=None):
     """Scaled Dot-Product Attention 的简化实现"""
@@ -77,7 +131,7 @@ def scaled_dot_product_attention(Q, K, V, mask=None):
     output = torch.matmul(attn_weights, V)
     return output, attn_weights</code></pre>
 
-        <h3>4.2 注意力机制变体</h3>
+        <h2>4.2 注意力机制变体</h2>
 
         <p>标准的Multi-Head Attention（MHA）虽然有强大的表达能力，但它的计算和显存开销是最大的。特别是在推理阶段，KV cache的大小直接和头数成正比。于是研究人员提出了几种省钱的变体。</p>
 
@@ -126,7 +180,48 @@ def scaled_dot_product_attention(Q, K, V, mask=None):
             </tr>
         </table>
 
-        <h3>4.3 前馈网络(FFN)设计</h3>
+        <div class="widget" id="kv-widget">
+            <p><strong>动手算一算：KV Cache 有多大？</strong>　固定查询头 h=32、每头维度 d_k=128、FP16（单层、单序列），切换注意力类型与上下文长度，看显存如何变化。</p>
+            <div role="group" aria-label="注意力类型">
+                <button type="button" data-kv-heads="32" aria-pressed="true">MHA</button>
+                <button type="button" data-kv-heads="8" aria-pressed="false">GQA (g=8)</button>
+                <button type="button" data-kv-heads="1" aria-pressed="false">MQA</button>
+            </div>
+            <label for="kv-len">上下文长度：<output id="kv-len-out">8,192</output> tokens</label>
+            <input id="kv-len" type="range" min="1024" max="131072" step="1024" value="8192" aria-label="上下文长度（token）">
+            <p class="readout" id="kv-readout" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var heads = 32, len = 8192, dk = 128, bytesPerEl = 2;
+            var readout = document.getElementById('kv-readout');
+            var lenOut = document.getElementById('kv-len-out');
+            var slider = document.getElementById('kv-len');
+            function fmt(n) { return n.toLocaleString('en-US'); }
+            function render() {
+                var perToken = 2 * heads * dk;
+                var mib = perToken * len * bytesPerEl / 1048576;
+                var name = heads === 32 ? 'MHA（KV 头 32）' : (heads === 8 ? 'GQA（KV 头 8）' : 'MQA（KV 头 1）');
+                readout.textContent = '当前 ' + name + '：每 token ' + fmt(perToken) + ' 个 FP16 元素，' + fmt(len) + ' tokens → 单层单序列 KV Cache ≈ ' + mib.toFixed(1) + ' MiB（含 K 与 V 两份）。相对 MHA 的压缩比 ' + (32 / heads) + '×。'
+                    + ' 注：此处为单层估算（教学示意），真实模型需乘层数 L。';
+                lenOut.textContent = fmt(len);
+            }
+            w = document.getElementById('kv-widget');
+            w.querySelectorAll('button[data-kv-heads]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    heads = parseInt(b.getAttribute('data-kv-heads'), 10);
+                    w.querySelectorAll('button[data-kv-heads]').forEach(function (o) {
+                        o.setAttribute('aria-pressed', String(o === b));
+                    });
+                    render();
+                });
+            });
+            slider.addEventListener('input', function () { len = parseInt(slider.value, 10); render(); });
+            render();
+        })();
+        </script>
+
+        <h2>4.3 前馈网络(FFN)设计</h2>
 
         <p>Attention层负责"交流"——让token之间互相交换信息。FFN层负责"思考"——对每个token独立进行非线性变换。经典的FFN是两个线性层加一个激活函数：<code>FFN(x) = W2 * GELU(W1 * x + b1) + b2</code>。其中W1将维度从d_model映射到d_ff（通常是4× d_model），W2再映射回来。</p>
 
@@ -138,7 +233,7 @@ def scaled_dot_product_attention(Q, K, V, mask=None):
             <p><strong>实践建议</strong>：不管你做什么模型，如果从头设计Transformer，建议直接采用SwiGLU FFN + GQA的组合。这个组合在LLaMA 2/3上被充分验证过，后续的DeepSeek和Qwen系列也验证了这个选择。别在激活函数上浪费时间创新——SwiGLU是目前工程上最有优势的选择。</p>
         </div>
 
-        <h3>4.4 位置编码演进</h3>
+        <h2>4.4 位置编码演进</h2>
 
         <p>Self-Attention本身是<strong>置换不变</strong>（permutation-invariant）的——你把输入序列的顺序打乱，self-attention的输出也会以同样的方式打乱，但语义就全变了！位置编码的作用就是给模型提供"token在序列中的位置信息"。</p>
 
@@ -150,13 +245,13 @@ def scaled_dot_product_attention(Q, K, V, mask=None):
 
         <p>截至2026年，几乎所有主流大模型（Llama、DeepSeek、Qwen、Mistral）都已经切换到RoPE。如果你还在使用可学习位置编码或其它方案，强烈建议迁移。</p>
 
-        <h3>4.5 归一化与残差连接</h3>
+        <h2>4.5 归一化与残差连接</h2>
 
         <p>归一化和残差连接是让深层网络能够稳定训练的"工程奇迹"。没有它们，几十层甚至上百层的transformer根本无法收敛。</p>
 
         <p><strong>Pre-Norm vs Post-Norm</strong>的争议是transformer架构历史上最重要的一次演进。原始Transformer论文用的是<strong>Post-Norm</strong>：<code>output = LayerNorm(x + Sublayer(x))</code>。但实验发现Post-Norm在深层网络中训练不稳定，需要非常细致的warmup策略。GPT-2和之后的模型转向了<strong>Pre-Norm</strong>：<code>output = x + Sublayer(LayerNorm(x))</code>。Pre-Norm的梯度流动在初始阶段更健康——每个残差分支的梯度可以直接传到前面的层，不受layer norm的缩放影响。</p>
 
-        <pre><code># Post-Norm vs Pre-Norm 对比
+        <pre style="overflow-x:auto"><code># Post-Norm vs Pre-Norm 对比
 class PostNormBlock(nn.Module):
     """原始Transformer的Post-Norm"""
     def forward(self, x):
@@ -183,12 +278,21 @@ class PreNormBlock(nn.Module):
 
         <p>好的，第4章的内容到这里。今天我们详解了Transformer的核心组件：从attention机制（MHA/MQA/GQA的取舍），到FFN设计（SwiGLU的胜利），再到位置编码（RoPE的统治地位）和归一化策略（Pre-Norm + RMSNorm的组合）。理解这些组件的原理和工程意义，是你后续理解和学会分布式训练、MoE、训练稳定性等话题的基础。第5章，我们进入分布式训练的世界——为什么单张GPU训不了大模型，以及数据并行、FSDP等技术是如何解决这个问题的。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Vaswani et al., <em>Attention Is All You Need</em>, 2017 — <a href="https://arxiv.org/abs/1706.03762">arXiv:1706.03762</a>（4.1 节公式 4-1 的来源）。</li>
+            <li>Ainslie et al., <em>GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints</em>, 2023 — <a href="https://arxiv.org/abs/2305.13245">arXiv:2305.13245</a>（4.2 节 GQA）。</li>
+            <li>Shazeer, <em>GLU Variants Improve Transformer</em>, 2020 — <a href="https://arxiv.org/abs/2002.05202">arXiv:2002.05202</a>（4.3 节 SwiGLU）。</li>
+            <li>Su et al., <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em>, 2021 — <a href="https://arxiv.org/abs/2104.09864">arXiv:2104.09864</a>（4.4 节 RoPE）。</li>
+            <li>Zhang &amp; Sennrich, <em>Root Mean Square Layer Normalization</em>, 2019 — <a href="https://arxiv.org/abs/1910.07467">arXiv:1910.07467</a>（4.5 节 RMSNorm）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="03.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="05.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
