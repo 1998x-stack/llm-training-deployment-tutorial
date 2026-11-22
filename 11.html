@@ -6,10 +6,10 @@
     <title>第11章 Scaling Laws与算力规划</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第11章 Scaling Laws与算力规划</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第11章 Scaling Laws与算力规划</h1>
 
         <p>大家好，我是你们的讲师。假设你有1000万美元的预算，要训练一个顶级大模型。你会训多大的模型？用多少数据？训多久？这些问题不是拍脑袋决定的——有<strong>Scaling Laws（缩放定律）</strong>来指导你。Scaling Laws可以说是大模型训练的"经济学"，它回答了一个核心问题：当模型大小、数据量、算力都增加时，模型性能会如何变化？</p>
 
         <p>我见过最可惜的一个案例是：某团队拿到一批A100配额后，决定训一个70B的dense模型，数据用了1万亿token。训了三个月，模型确实work了。但如果他们当时看过Scaling Laws，会发现同样的算力预算下，改训一个40B模型但用2万亿token，性能会更好。这就是我们常说的"<strong>过度训练（Overtraining）</strong>"——模型太大了，数据跟不上。这一章我们就来弄明白：给定手里的资源，怎么最优地分配模型大小和数据量。</p>
 
-        <h3>11.1 Kaplan vs Chinchilla: 两大Scaling Law</h3>
+        <h2>11.1 Kaplan vs Chinchilla: 两大Scaling Law</h2>
 
         <p>Scaling Laws的研究经历了两大里程碑式的论文。理解它们之间的差异，是理解整个训练规划学科的起点。</p>
 
@@ -96,9 +96,47 @@
             <p><strong>关键洞察</strong>：Kaplan和Chinchilla的结论差异很大程度上来源于实验设置的不同。Kaplan训练小模型（最大1.5B）做外推预测，而Chinchilla用更大的模型（最大16B）验证了外推的准确性。业界目前更认可Chinchilla，因为它的实验规模更大、结论更贴近实战。但要注意：<strong>Scaling Laws是统计规律，不是物理定律</strong>——它们描述了"平均行为"，但数据质量、架构设计等不可量化的因素对实际性能有巨大影响。</p>
         </div>
 
-        <h3>11.2 计算最优训练</h3>
+        <h2>11.2 计算最优训练</h2>
 
         <p>"计算最优"的意思是：给定固定的算力预算（以FLOPs计），选择模型大小N和训练token数D的组合，使得最终模型的loss最低。Chinchilla给出了一个简洁的公式：<strong>N_opt ≈ (C/(6×1.4e3))^0.5</strong>，其中C是总FLOPs预算。</p>
+
+        <figure>
+            <svg viewBox="0 0 640 400" role="img" aria-labelledby="fig11-1-title fig11-1-desc">
+                <title id="fig11-1-title">给定算力预算下的计算最优前沿</title>
+                <desc id="fig11-1-desc">三条 U 形曲线代表不同算力预算下 loss 随模型参数量的变化，曲线最低点随预算增大向右下方移动，连接最低点的虚线即计算最优前沿。</desc>
+                <line x1="70" y1="345" x2="615" y2="345" stroke="#334155" stroke-width="2"></line>
+                <line x1="70" y1="345" x2="70" y2="45" stroke="#334155" stroke-width="2"></line>
+                <text x="342" y="380" text-anchor="middle" font-size="13" fill="#334155">模型参数量 N（对数刻度，示意）</text>
+                <text x="24" y="200" text-anchor="middle" font-size="13" fill="#334155" transform="rotate(-90 24 200)">验证 loss（越低越好）</text>
+                <path d="M90 80 Q200 240 360 130" fill="none" stroke="#a78bfa" stroke-width="2.5"></path>
+                <path d="M110 110 Q260 290 470 150" fill="none" stroke="#8b5cf6" stroke-width="2.5"></path>
+                <path d="M140 140 Q330 330 580 175" fill="none" stroke="#6d28d9" stroke-width="2.5"></path>
+                <circle cx="238" cy="175" r="4.5" fill="#a78bfa"></circle>
+                <circle cx="298" cy="211" r="4.5" fill="#8b5cf6"></circle>
+                <circle cx="368" cy="245" r="4.5" fill="#6d28d9"></circle>
+                <path d="M238 175 L298 211 L368 245" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-dasharray="7 5"></path>
+                <text x="112" y="66" font-size="12" fill="#7c3aed">C₁</text>
+                <text x="150" y="98" font-size="12" fill="#7c3aed">C₂ &gt; C₁</text>
+                <text x="185" y="128" font-size="12" fill="#7c3aed">C₃ &gt; C₂</text>
+                <text x="392" y="205" font-size="12" fill="#0f766e">计算最优前沿</text>
+                <text x="96" y="300" font-size="11" fill="#64748b">数据太少→欠拟合</text>
+                <text x="455" y="332" font-size="11" fill="#64748b">模型太小→收益递减</text>
+            </svg>
+            <figcaption>图 11-1　计算最优前沿示意：固定算力预算下，loss 对模型参数量 N 呈 U 形——N 太小则容量不足，N 太大则每个参数分到的数据不够。随预算 C₁→C₂→C₃ 增大，最优参数量 N_opt 向右下方移动；连接三条曲线最低点的虚线即「计算最优前沿」。定性趋势取自 Hoffmann 等 2022（Chinchilla），曲线为教学示意，非按真实拟合系数绘制。</figcaption>
+        </figure>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="Chinchilla 参数化损失函数">
+            <math display="block" aria-label="L of N and D equals E plus A over N to the alpha, plus B over D to the beta">
+                <mrow>
+                    <mi>L</mi><mo>(</mo><mi>N</mi><mo>,</mo><mi>D</mi><mo>)</mo>
+                    <mo>=</mo><mi>E</mi><mo>+</mo>
+                    <mfrac><mi>A</mi><msup><mi>N</mi><mi>α</mi></msup></mfrac>
+                    <mo>+</mo>
+                    <mfrac><mi>B</mi><msup><mi>D</mi><mi>β</mi></msup></mfrac>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 11-1　Chinchilla 参数化损失（Hoffmann 等，2022）。参考拟合值 α≈0.34、β≈0.28、E≈1.69，随数据分布与分词方式不同而变，此处仅示公式结构。</span>
+        </div>
 
         <p>但这只是理论。在现实中你还需要考虑几个约束：</p>
 
@@ -108,7 +146,7 @@
 
         <p><strong>推理成本约束。</strong>大模型不仅在训练时烧钱，推理时也烧钱。有时候你选择较小的模型+更多的数据，虽然训练loss可能稍高，但推理成本低得多，综合性价比更高。这就像买车——虽然SUV空间更大，但如果你大多数时候一个人开，小轿车可能更经济。</p>
 
-        <pre><code># 计算最优训练的参数估计（Python伪代码）
+        <pre style="overflow-x:auto"><code># 计算最优训练的参数估计（Python伪代码）
 
 def estimate_optimal_params(flops_budget, model_params_mapping=None):
     """
@@ -132,11 +170,18 @@ def estimate_optimal_params(flops_budget, model_params_mapping=None):
 # 2. 推理成本约束 → 1个70B部署成本 vs 2个35B
 #    有些场景用多个小模型比单个大模型更划算</code></pre>
 
-        <h3>11.3 算力预算规划</h3>
+        <h2>11.3 算力预算规划</h2>
 
         <p>从理论到实践，算力规划需要回答三个具体问题：<strong>需要多少FLOPs？需要多少GPU？需要多少钱？</strong></p>
 
         <p><strong>FLOPs估算。</strong>一次标准训练的前向+反向大约需要 6×N×D FLOPs（N=参数量，D=token数）。对于dense模型，这是业界通用的估算公式。例如训练一个7B模型在2万亿token上：6 × 7e9 × 2e12 ≈ 8.4e22 FLOPs。H100的峰值理论算力是1979 TFLOPS（FP16），实际训练利用率通常在35-50%之间。所以实际需要的GPU小时数 = FLOPs / (GPU峰值 × 利用率)。用8.4e22 / (1979e12 × 0.4) ≈ 106,000 GPU小时。1张H100跑约12年，256张H100跑约17天。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="训练FLOPs估算公式">
+            <math display="block" aria-label="C approximately equals 6 N D">
+                <mrow><mi>C</mi><mo>≈</mo><mn>6</mn><mi>N</mi><mi>D</mi></mrow>
+            </math>
+            <span class="eq-num">公式 11-2　前向+反向的 FLOPs 估算（Kaplan 等，2020，§2.1）：C ≈ 6ND。</span>
+        </div>
 
         <p><strong>Cost分解。</strong>训练成本 = GPU成本 + 网络成本 + 存储成本 + 电力成本。GPU成本是大头（约80%），而GPU成本中约40%是采购/租赁费，30%是电力，10%是散热。以H100按需租赁价格约$2-3/GPU-hour计算，上面那个训练约$250,000-300,000。</p>
 
@@ -187,7 +232,42 @@ def estimate_optimal_params(flops_budget, model_params_mapping=None):
             <p><strong>实用估算技巧</strong>：不要被这个月的表吓到。实际训练中，你可以用<strong>小规模外推法</strong>：先用1/1000的配置跑一个小实验（比如在一个节点上跑1000步），记录吞吐量（tokens/second/GPU），然后线性外推到全规模。这个方法比纯理论公式更准确，因为它考虑了你的具体集群配置（网络拓扑、存储I/O等的影响）。</p>
         </div>
 
-        <h3>11.4 MoE模型的Scaling</h3>
+        <div class="widget" id="scale-widget">
+            <p><strong>算力与成本速算器</strong>　按 C≈6ND 估算训练 FLOPs，再按有效吞吐 220 TFLOPS/GPU（约 1979 TFLOPS 峰值的 11%，与正文估算口径一致）、256 张 GPU、$2.5/GPU·h 估算时间与成本。吞吐与价格为教学取值，实际随硬件与市场波动。</p>
+            <label for="sc-n">模型参数量 N：<output id="sc-n-out">7</output> B</label>
+            <input id="sc-n" type="range" min="1" max="100" step="1" value="7" aria-label="模型参数量（十亿）">
+            <label for="sc-d">训练数据量 D：<output id="sc-d-out">2.0</output> T tokens</label>
+            <input id="sc-d" type="range" min="0.1" max="10" step="0.1" value="2" aria-label="训练数据量（万亿 token）">
+            <button type="button" id="sc-cal">按 Chinchilla 校准 D（≈20 token/参数）</button>
+            <p class="readout" id="sc-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var N = 7, D = 2, TEFF = 220e12, GPUS = 256, RATE = 2.5;
+            var nOut = document.getElementById('sc-n-out'), dOut = document.getElementById('sc-d-out');
+            var out = document.getElementById('sc-out');
+            function render() {
+                var flops = 6 * N * 1e9 * D * 1e12;
+                var gpuH = flops / TEFF / 3600;
+                var days = gpuH / GPUS / 24;
+                var costK = Math.round(gpuH * RATE / 1000);
+                out.textContent = 'FLOPs ≈ ' + flops.toExponential(2).replace('e+', 'e') + '；GPU·小时 ≈ '
+                    + Math.round(gpuH).toLocaleString('en-US') + '（' + GPUS + '×H100）→ 约 ' + days.toFixed(1)
+                    + ' 天；估算成本 ≈ $' + costK.toLocaleString('en-US') + 'K。';
+                nOut.textContent = N;
+                dOut.textContent = D.toFixed(1);
+            }
+            document.getElementById('sc-n').addEventListener('input', function (e) { N = +e.target.value; render(); });
+            document.getElementById('sc-d').addEventListener('input', function (e) { D = +e.target.value; render(); });
+            document.getElementById('sc-cal').addEventListener('click', function () {
+                var dT = Math.round(Math.min(10, Math.max(0.1, N * 20 / 1000)) * 10) / 10;
+                document.getElementById('sc-d').value = dT; D = dT; render();
+            });
+            render();
+        })();
+        </script>
+
+        <h2>11.4 MoE模型的Scaling</h2>
 
         <p>MoE架构的出现让Scaling Laws变得更加复杂——因为MoE有"总参数量"和"激活参数量"两个变量，而Scaling Law的公式是针对dense模型的"激活参数量"来定义的。</p>
 
@@ -197,7 +277,7 @@ def estimate_optimal_params(flops_budget, model_params_mapping=None):
 
         <p><strong>Expert数量与Scaling。</strong>那是不是专家越多越好？理论上，更多的专家意味着更大的知识容量，但同时路由器需要从更多专家中做选择——路由的难度增加了，而且每个专家分到的训练数据更少（因为token被分散到更多专家）。有研究表明专家的最优数量大约在64-128之间，超过之后收益递减。</p>
 
-        <pre><code># MoE vs Dense 的Scaling对比
+        <pre style="overflow-x:auto"><code># MoE vs Dense 的Scaling对比
 # LLaMA 405B (dense): FLOPs per token ≈ 405e9 * 2 = 810e9 FLOPs
 # DeepSeek-V3 (MoE):  FLOPs per token ≈ 37e9 * 2 = 74e9 FLOPs
 
@@ -212,7 +292,7 @@ def estimate_optimal_params(flops_budget, model_params_mapping=None):
 # 参数: 37B | 训练数据: 2.8T tokens | 训练FLOPs: 6 * 37e9 * 2.8e12 ≈ 6.2e23
 # → 不同的是，MoE的知识容量更大，结果更好</code></pre>
 
-        <h3>11.5 Scaling Law的局限</h3>
+        <h2>11.5 Scaling Law的局限</h2>
 
         <p>在结束这一章之前，我想泼一盆冷水——<strong>Scaling Laws有很大的局限性</strong>，在实战中不要盲信。</p>
 
@@ -230,12 +310,19 @@ def estimate_optimal_params(flops_budget, model_params_mapping=None):
 
         <p>好了，这一章我们从Kaplan和Chinchilla两大Scaling Law谈起，学习了怎么在给定算力预算的情况下最优分配模型大小和数据量，然后深入FLOPs估算和成本规划的实操方法，又讨论了MoE架构下的Scaling差异，最后指出了Scaling Law的现实局限。这些知识帮助你"算好账"——在花钱之前就知道这笔投资最可能带来什么回报。下一章我们将聚焦一个当前热度极高的方向——<strong>第12章「长上下文训练技术」</strong>，看看怎么让模型处理百万级别的超长文本。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Kaplan et al., <em>Scaling Laws for Neural Language Models</em>, 2020 — <a href="https://arxiv.org/abs/2001.08361">arXiv:2001.08361</a>（11.1 节、公式 11-2）。</li>
+            <li>Hoffmann et al., <em>Training Compute-Optimal Large Language Models</em>, 2022 — <a href="https://arxiv.org/abs/2203.15556">arXiv:2203.15556</a>（11.2 节、公式 11-1、≈20 token/参数）。</li>
+            <li>DeepSeek-AI, <em>DeepSeek-V3 Technical Report</em>, 2024 — <a href="https://arxiv.org/abs/2412.19437">arXiv:2412.19437</a>（11.4 节 MoE 配置：671B 总参、37B 激活、2.8T tokens）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="10.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="12.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
