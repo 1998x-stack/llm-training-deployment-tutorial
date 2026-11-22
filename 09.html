@@ -6,10 +6,10 @@
     <title>第9章 MoE混合专家架构</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第9章 MoE混合专家架构</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第9章 MoE混合专家架构</h1>
 
         <p>大家好，我是你们的讲师。如果说2025-2026年大模型训练领域有一个"最具影响力的架构创新"，那一定是<strong>MoE（Mixture of Experts，混合专家）</strong>。DeepSeek-V3用671B总参数量、每次只激活37B参数，训练成本仅约557万美元——而同级别的dense模型（如LLaMA 405B）训练成本是其数倍。这就是MoE的魔力：以更低的计算成本拥有更大的模型容量。</p>
 
         <p>但MoE不是银弹。我见过一个团队满怀信心地把一个13B dense模型换成MoE架构（8个expert，top-2路由），结果训练收敛速度反而更慢了。原因是他们没做好负载均衡——80%的token都涌向了同一个expert，模型实际上只有一个expert在工作，其他的"专家"白白浪费了计算资源。MoE的训练和推理都有独特的"坑"，我们在这一章把它们一一讲透。</p>
 
-        <h3>9.1 MoE的核心思想</h3>
+        <h2>9.1 MoE的核心思想</h2>
 
         <p>MoE的核心思想其实非常直观：<strong>你不是所有时候都需要所有的"大脑"</strong>。处理一个数学问题时，你只需要调用跟逻辑推理相关的知识；处理一个文学问题时，你可能更需要语言风格和修辞方面的知识。MoE就是模拟这个过程的——它有一个"路由"来决定每个token应该交给哪些"专家"来处理。</p>
 
@@ -97,15 +97,79 @@
 
         <p>这个表格说明：MoE本质上是用<strong>参数量换取知识容量</strong>，而计算成本只跟激活参数量相关。这就是为什么MoE能在相同的FLOPs预算下获得更好的模型质量。</p>
 
-        <h3>9.2 路由机制</h3>
+        <h2>9.2 路由机制</h2>
 
         <p>MoE的灵魂在于<strong>路由器（Router）</strong>怎么决定把每个token分配给哪些专家。路由机制直接决定了模型的表达能力和训练效率。</p>
 
+        <figure>
+            <svg viewBox="0 0 740 380" role="img" aria-labelledby="fig9-1-title fig9-1-desc">
+                <title id="fig9-1-title">MoE 层的路由与专家计算数据流</title>
+                <desc id="fig9-1-desc">token 经门控 Router 算出各专家权重，只送给 top-2 专家与必选的共享专家，输出为被选中专家输出的加权和。</desc>
+                <defs>
+                    <marker id="fig9-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+                    </marker>
+                </defs>
+                <text x="18" y="186" font-size="13" fill="#334155">token x</text>
+                <line x1="76" y1="182" x2="104" y2="182" stroke="#64748b" stroke-width="2" marker-end="url(#fig9-1-arrow)"></line>
+                <rect x="106" y="158" width="128" height="48" rx="10" fill="#fef3c7" stroke="#f59e0b"></rect>
+                <text x="170" y="187" text-anchor="middle" font-size="13" fill="#92400e">Router 门控</text>
+                <line x1="234" y1="182" x2="326" y2="62" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#fig9-1-arrow)"></line>
+                <line x1="234" y1="182" x2="326" y2="126" stroke="#8b5cf6" stroke-width="2.2" marker-end="url(#fig9-1-arrow)"></line>
+                <line x1="234" y1="182" x2="326" y2="190" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#fig9-1-arrow)"></line>
+                <line x1="234" y1="182" x2="326" y2="254" stroke="#8b5cf6" stroke-width="2.2" marker-end="url(#fig9-1-arrow)"></line>
+                <path d="M170 206 L170 320 L326 320" fill="none" stroke="#14b8a6" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fig9-1-arrow)"></path>
+                <rect x="330" y="40" width="150" height="44" rx="9" fill="#f1f5f9" stroke="#cbd5e1"></rect>
+                <text x="405" y="67" text-anchor="middle" font-size="13" fill="#64748b">专家 E₁（未选中）</text>
+                <rect x="330" y="104" width="150" height="44" rx="9" fill="#ede9fe" stroke="#8b5cf6"></rect>
+                <text x="405" y="131" text-anchor="middle" font-size="13" fill="#4c1d95">专家 E₂（top-1）</text>
+                <rect x="330" y="168" width="150" height="44" rx="9" fill="#f1f5f9" stroke="#cbd5e1"></rect>
+                <text x="405" y="195" text-anchor="middle" font-size="13" fill="#64748b">专家 E₃（未选中）</text>
+                <rect x="330" y="232" width="150" height="44" rx="9" fill="#ede9fe" stroke="#8b5cf6"></rect>
+                <text x="405" y="259" text-anchor="middle" font-size="13" fill="#4c1d95">专家 E₄（top-2）</text>
+                <rect x="330" y="300" width="150" height="40" rx="9" fill="#ccfbf1" stroke="#14b8a6"></rect>
+                <text x="405" y="325" text-anchor="middle" font-size="13" fill="#115e59">共享专家（必选）</text>
+                <line x1="480" y1="126" x2="538" y2="172" stroke="#8b5cf6" stroke-width="2" marker-end="url(#fig9-1-arrow)"></line>
+                <line x1="480" y1="254" x2="538" y2="192" stroke="#8b5cf6" stroke-width="2" marker-end="url(#fig9-1-arrow)"></line>
+                <line x1="480" y1="320" x2="538" y2="205" stroke="#14b8a6" stroke-width="2" marker-end="url(#fig9-1-arrow)"></line>
+                <rect x="540" y="150" width="170" height="64" rx="10" fill="#e0e7ff" stroke="#6366f1"></rect>
+                <text x="625" y="176" text-anchor="middle" font-size="13" fill="#3730a3">加权求和</text>
+                <text x="625" y="197" text-anchor="middle" font-size="13" fill="#3730a3">Σ gᵢ · Eᵢ(x)</text>
+                <line x1="710" y1="182" x2="736" y2="182" stroke="#64748b" stroke-width="2" marker-end="url(#fig9-1-arrow)"></line>
+                <text x="625" y="345" text-anchor="middle" font-size="12" fill="#64748b">输出 y（即 MoE 层的输出）</text>
+            </svg>
+            <figcaption>图 9-1　MoE 层的数据流：token 经门控 Router 算出每个专家的权重，只把 token 送给 top-K（此处 K=2）专家与必选的共享专家，输出为被选中专家输出的加权和。未选中的专家本次不参与计算，所以每 token 的 FLOPs 只与激活参数量相关，而知识容量由总参数量决定。共享专家的设计取自 DeepSeekMoE（Dai 等，2024）；K=2 为工业常见配置，具体数值随模型而异（此处为教学示意）。</figcaption>
+        </figure>
+
         <p><strong>Top-K路由</strong>是最基础的路由方式。每个token经过一个线性门控网络得到一个logits向量（维度=专家数），然后取top-K个分数最高的专家，用softmax归一化得到权重。最终输出是K个专家输出的加权和。K=2是工业界的标配——既保证了每个token能利用多个专家的知识，又不会引入过多的跨专家通信开销。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="MoE 层输出公式">
+            <math display="block" aria-label="y equals sum over i in top-K set T of g sub i of x times E sub i of x">
+                <mrow>
+                    <mi>y</mi><mo>=</mo>
+                    <munder><mo>∑</mo><mrow><mi>i</mi><mo>∈</mo><mi>T</mi></mrow></munder>
+                    <msub><mi>g</mi><mi>i</mi></msub><mo>(</mo><mi>x</mi><mo>)</mo><mo>·</mo>
+                    <msub><mi>E</mi><mi>i</mi></msub><mo>(</mo><mi>x</mi><mo>)</mo>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 9-1　MoE 层输出：T 为 top-K 专家集合，gᵢ 为门控权重（对 top-K logits 做 softmax 归一化），Eᵢ 为第 i 个专家的 FFN。</span>
+        </div>
 
         <p>但简单的Top-K路由有个大问题：<strong>负载不均衡</strong>。某些"全能型"专家可能会被大量token选中，而另一些"专精型"专家门可罗雀。为了解决这个问题，Google在MoE论文中提出了<strong>Load Balancing Loss（负载均衡损失）</strong>，也叫auxiliary loss。核心思路是：在训练损失上加一项正则项，惩罚专家被选中的不均匀程度。</p>
 
-        <pre><code># Load Balancing Loss 的核心公式（示意）
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="负载均衡损失公式">
+            <math display="block" aria-label="L balance equals E times the sum over i of f sub i times P sub i">
+                <mrow>
+                    <msub><mi>L</mi><mtext>bal</mtext></msub><mo>=</mo>
+                    <mi>E</mi><mo>·</mo>
+                    <munder><mo>∑</mo><mi>i</mi></munder>
+                    <msub><mi>f</mi><mi>i</mi></msub><mo>·</mo><msub><mi>P</mi><mi>i</mi></msub>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 9-2　负载均衡损失（Switch Transformer，Fedus 等，2021）：fᵢ 为路由到专家 i 的 token 比例，Pᵢ 为专家 i 的平均门控概率。均匀分布（fᵢ = Pᵢ = 1/E）时取最小值 1。</span>
+        </div>
+
+        <pre style="overflow-x:auto"><code># Load Balancing Loss 的核心公式（示意）
 # 假设 E 个专家，batch 中有 T 个 token
 # f_i = 被路由到专家 i 的token比例（实际）
 # P_i = 专家 i 的softmax概率的和 / T（平均概率）
@@ -120,7 +184,62 @@
             <p><strong>经验之谈</strong>：Top-K + Load Balancing Loss是目前最广泛使用的方案。Expert Choice Routing虽然理论上更优雅，但实现复杂度高、团队维护成本大。除非你有专门的MoE训练框架团队，否则我建议先走Top-K路线。DeepSeek-V3用的就是改进版的Top-K路由，配合他们独创的auxiliary-loss-free策略。</p>
         </div>
 
-        <h3>9.3 DeepSeekMoE架构</h3>
+        <div class="widget" id="moe-widget">
+            <p><strong>动手玩路由</strong>　调整 4 个专家的门控 logits，看 softmax 概率与 top-2 重新归一化后的真实权重。K=2 时只有被选中的两个专家参与计算。</p>
+            <label for="moe-z1">专家 1 的 logit：<output id="moe-z1-out">2.0</output></label>
+            <input id="moe-z1" type="range" min="-3" max="4" step="0.5" value="2" aria-label="专家1 logit">
+            <label for="moe-z2">专家 2 的 logit：<output id="moe-z2-out">0.5</output></label>
+            <input id="moe-z2" type="range" min="-3" max="4" step="0.5" value="0.5" aria-label="专家2 logit">
+            <label for="moe-z3">专家 3 的 logit：<output id="moe-z3-out">-1.0</output></label>
+            <input id="moe-z3" type="range" min="-3" max="4" step="0.5" value="-1" aria-label="专家3 logit">
+            <label for="moe-z4">专家 4 的 logit：<output id="moe-z4-out">0.0</output></label>
+            <input id="moe-z4" type="range" min="-3" max="4" step="0.5" value="0" aria-label="专家4 logit">
+            <button type="button" id="moe-balanced">示例：均衡</button>
+            <button type="button" id="moe-skewed">示例：偏斜</button>
+            <p class="readout" id="moe-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var z = [2, 0.5, -1, 0];
+            var out = document.getElementById('moe-out');
+            function softmax(a) {
+                var m = Math.max.apply(null, a);
+                var e = a.map(function (v) { return Math.exp(v - m); });
+                var s = e.reduce(function (x, y) { return x + y; }, 0);
+                return e.map(function (v) { return v / s; });
+            }
+            function render() {
+                var p = softmax(z);
+                var idx = [0, 1, 2, 3].sort(function (a, b) { return p[b] - p[a]; }).slice(0, 2);
+                var s = idx.reduce(function (x, i) { return x + p[i]; }, 0);
+                var g = idx.map(function (i) { return (p[i] / s).toFixed(3); });
+                var rest = [0, 1, 2, 3].filter(function (i) { return idx.indexOf(i) < 0; })
+                    .map(function (i) { return 'E' + (i + 1); });
+                out.textContent = 'softmax 概率 = [' + p.map(function (v) { return v.toFixed(3); }).join(', ')
+                    + ']；选中 top-2 专家 = E' + (idx[0] + 1) + ', E' + (idx[1] + 1)
+                    + '；重归一化权重 g = [' + g.join(', ') + ']（和 = 1.000）；未选中：' + rest.join(', ')
+                    + ' 本次不参与计算。';
+                for (var i = 1; i <= 4; i++) {
+                    document.getElementById('moe-z' + i + '-out').textContent = z[i - 1].toFixed(1);
+                }
+            }
+            [1, 2, 3, 4].forEach(function (i) {
+                document.getElementById('moe-z' + i).addEventListener('input', function (e) {
+                    z[i - 1] = +e.target.value; render();
+                });
+            });
+            function setZ(arr) {
+                z = arr;
+                arr.forEach(function (v, i) { document.getElementById('moe-z' + (i + 1)).value = v; });
+                render();
+            }
+            document.getElementById('moe-balanced').addEventListener('click', function () { setZ([0, 0, 0, 0]); });
+            document.getElementById('moe-skewed').addEventListener('click', function () { setZ([4, 0, -2, -3]); });
+            render();
+        })();
+        </script>
+
+        <h2>9.3 DeepSeekMoE架构</h2>
 
         <p>DeepSeek在2024-2025年发布的MoE架构代表了当前最先进的MoE设计理念。它有几个核心创新：</p>
 
@@ -163,7 +282,7 @@
             </tr>
         </table>
 
-        <h3>9.4 MoE训练的挑战</h3>
+        <h2>9.4 MoE训练的挑战</h2>
 
         <p>MoE虽然强大，但训练起来比dense模型麻烦得多。我归纳了几个最常见的痛点。</p>
 
@@ -179,7 +298,7 @@
             <p><strong>踩坑案例</strong>：某公司在训练一个MoE模型时，发现训练每隔2-3天就遇到OOM。排查了两周，最终定位到问题：数据中存在大量超长序列（来自代码数据集的某些大文件），这些长序列在路由时表现异常，几乎全部涌向同一个专家。解决方案有两个：一是对超长序列做截断（更简单），二是在路由计算时对长序列做special handling。他们选择了第一种，问题立即解决。</p>
         </div>
 
-        <h3>9.5 MoE推理挑战</h3>
+        <h2>9.5 MoE推理挑战</h2>
 
         <p>MoE的推理和训练有不同的挑战。训练时你关注吞吐（throughput），推理时你关注延迟（latency）和批处理效率。</p>
 
@@ -189,7 +308,7 @@
 
         <p><strong>推理时的专家调度。</strong>在推理服务中，多请求并发时，专家调度更加复杂。有些框架会做<strong>expert placement优化</strong>——把关联度高的专家放在同一个设备上，降低跨设备通信。还有的会用<strong>prefetching</strong>——根据当前批次的token路由分布，预判下一批次可能需要的专家，提前加载。</p>
 
-        <pre><code># MoE推理时Expert调度示意
+        <pre style="overflow-x:auto"><code># MoE推理时Expert调度示意
 # 场景：4张GPU，16个Expert，每个GPU放4个Expert
 
 # Step 1: Token路由
@@ -215,12 +334,20 @@ GPU0收到token_A, token_B, token_C的完整结果
 
         <p>好了，这一章我们深入拆解了MoE架构的核心原理：从稀疏vs稠密的本质区别，到Top-K路由的机制与负载均衡技巧，再到DeepSeekMoE的细粒度专家和动态偏置创新，最后分析了训练和推理中的独特挑战。MoE已经成为2026年大模型的主流架构，理解它是每一位训练工程师的必修课。下一章我们将从"架构"转向"训练过程本身"——<strong>第10章「训练稳定性与收敛」</strong>，讨论那些让loss突然爆炸、模型无法收敛的棘手问题。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Fedus et al., <em>Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity</em>, 2021 — <a href="https://arxiv.org/abs/2101.03961">arXiv:2101.03961</a>（公式 9-2 负载均衡损失）。</li>
+            <li>Lepikhin et al., <em>GShard: Scaling Giant Models with Conditional Computation</em>, 2020 — <a href="https://arxiv.org/abs/2006.16668">arXiv:2006.16668</a>（top-2 路由与负载均衡损失）。</li>
+            <li>Dai et al., <em>DeepSeekMoE: Towards Ultimate Expert Specialization</em>, 2024 — <a href="https://arxiv.org/abs/2401.06066">arXiv:2401.06066</a>（9.3 节细粒度/共享专家）。</li>
+            <li>DeepSeek-AI, <em>DeepSeek-V3 Technical Report</em>, 2024 — <a href="https://arxiv.org/abs/2412.19437">arXiv:2412.19437</a>（9.3 节无辅助损失负载均衡与 671B/37B 配置）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="08.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="10.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
