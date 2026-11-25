@@ -6,10 +6,10 @@
     <title>第8章 3D并行与大规模训练</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第8章 3D并行与大规模训练</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第8章 3D并行与大规模训练</h1>
 
         <p>大家好，我是你们的讲师。前面几章我们聊了混合精度、优化器调度，这些都假设模型能放进一张GPU。可现实是，一个70B的模型用FP16存权重就占了140GB，加上优化器状态（AdamW存两份动量）和梯度，总共超过400GB——H100才80GB显存。怎么办？答案只有一个：<strong>拆分</strong>。</p>
 
         <p>我见过太多团队在这个环节翻车。有个朋友第一次训13B模型，信心满满地上了8张A100，结果跑了三天发现GPU利用率不到15%。一查，他只用数据并行（Data Parallelism），每张卡都要放完整的模型副本——13B模型光参数就26GB，加上优化器状态和激活值，8张卡的显存全部耗尽，根本跑不了大batch size。这就是典型的"并行策略选错"。今天我们就把3D并行讲透——TP、PP、DP各自怎么拆、怎么合，以及怎么根据你的情况选。</p>
 
-        <h3>8.1 3D并行的全景图</h3>
+        <h2>8.1 3D并行的全景图</h2>
 
         <p>3D并行，顾名思义是<strong>三种并行方式的组合</strong>：数据并行（DP）、张量并行（TP）、流水线并行（PP）。它们从三个维度拆分训练计算，互不冲突。</p>
 
@@ -61,6 +61,38 @@
 
         <p>在实际大规模训练中，这三种并行是嵌套叠加的。下面这个表总结了它们的特性：</p>
 
+        <figure>
+            <svg viewBox="0 0 720 330" role="img" aria-labelledby="fig8-1-title fig8-1-desc">
+                <title id="fig8-1-title">DP × TP × PP 三维并行的嵌套结构</title>
+                <desc id="fig8-1-desc">两个 PP stage 之间按 micro-batch 流水；每个 stage 内部是 2×2 的 GPU 网格，横向为 DP、纵向为 TP。总卡数等于 DP×TP×PP。</desc>
+                <defs>
+                    <marker id="fig8-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+                    </marker>
+                </defs>
+                <g font-size="13">
+                    <text x="190" y="26" text-anchor="middle" font-weight="700" fill="#334155">PP Stage 0</text>
+                    <text x="530" y="26" text-anchor="middle" font-weight="700" fill="#334155">PP Stage 1</text>
+                    <rect x="40" y="36" width="300" height="220" rx="12" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4"></rect>
+                    <rect x="380" y="36" width="300" height="220" rx="12" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4"></rect>
+                    <rect x="50" y="46" width="140" height="100" rx="8" fill="#ede9fe" stroke="#8b5cf6"></rect><text x="120" y="101" text-anchor="middle" fill="#4c1d95">GPU 0</text>
+                    <rect x="190" y="46" width="140" height="100" rx="8" fill="#ede9fe" stroke="#8b5cf6"></rect><text x="260" y="101" text-anchor="middle" fill="#4c1d95">GPU 1</text>
+                    <rect x="50" y="146" width="140" height="100" rx="8" fill="#ccfbf1" stroke="#14b8a6"></rect><text x="120" y="201" text-anchor="middle" fill="#115e59">GPU 2</text>
+                    <rect x="190" y="146" width="140" height="100" rx="8" fill="#ccfbf1" stroke="#14b8a6"></rect><text x="260" y="201" text-anchor="middle" fill="#115e59">GPU 3</text>
+                    <rect x="390" y="46" width="140" height="100" rx="8" fill="#ede9fe" stroke="#8b5cf6"></rect><text x="460" y="101" text-anchor="middle" fill="#4c1d95">GPU 4</text>
+                    <rect x="530" y="46" width="140" height="100" rx="8" fill="#ede9fe" stroke="#8b5cf6"></rect><text x="600" y="101" text-anchor="middle" fill="#4c1d95">GPU 5</text>
+                    <rect x="390" y="146" width="140" height="100" rx="8" fill="#ccfbf1" stroke="#14b8a6"></rect><text x="460" y="201" text-anchor="middle" fill="#115e59">GPU 6</text>
+                    <rect x="530" y="146" width="140" height="100" rx="8" fill="#ccfbf1" stroke="#14b8a6"></rect><text x="600" y="201" text-anchor="middle" fill="#115e59">GPU 7</text>
+                    <line x1="340" y1="146" x2="378" y2="146" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig8-1-arrow)"></line>
+                    <text x="360" y="134" text-anchor="middle" font-size="11" fill="#64748b">micro-batch</text>
+                    <text x="190" y="284" text-anchor="middle" font-size="12" fill="#475569">横向 = DP（batch 切分）　纵向 = TP（层内切分）</text>
+                    <text x="360" y="308" text-anchor="middle" font-size="12" fill="#334155">总卡数 = DP × TP × PP = 2 × 2 × 2 = 8（图中示例）</text>
+                </g>
+            </svg>
+            <figcaption>图 8-1　3D 并行的嵌套结构：PP 把模型按层切成 stage，stage 之间用点到点通信传递 micro-batch；每个 stage 内部再按 DP（batch）和 TP（层内参数）切分。TP 通信密集、需 NVLink；PP 通信量小、可跨节点；DP 在最外层做梯度 all-reduce。图中 2×2×2=8 卡仅为教学示意，真实集群规模可达数百至数千卡。</figcaption>
+        </figure>
+
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>并行类型</th>
@@ -98,12 +130,13 @@
                 <td>数百~数千卡</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>一个关键原则</strong>：通信密集的并行（TP）放在节点内部，利用NVLink的高速带宽；通信量适中的并行（PP）跨节点但保持小通信量；通信量最小的DP放在最外层跨节点all-reduce。这个"通信分层"原则是设计3D并行策略的基石。</p>
         </div>
 
-        <h3>8.2 张量并行(TP)深入</h3>
+        <h2>8.2 张量并行(TP)深入</h2>
 
         <p>张量并行的核心思路来自NVIDIA Megatron-LM框架。它的基本操作是将一个线性变换拆成<strong>列并行（Column Parallel）</strong>和<strong>行并行（Row Parallel）</strong>两种模式。</p>
 
@@ -113,7 +146,7 @@
 
         <p>在Transformer中，TP的典型分配方式是：Attention的QKV投影用列并行，Attention的输出投影用行并行；MLP的第一个线性层用列并行+GeLU，第二个线性层用行并行。这样每层只做两次all-reduce——一次在Attention内，一次在MLP内。</p>
 
-        <pre><code># Megatron-LM的TP通信模式示意
+        <pre style="overflow-x:auto"><code># Megatron-LM的TP通信模式示意
 # 一个Transformer层的前向，TP=4
 # 步骤1: QKV投影（列并行）
 X → split_col(QKV_W) → matmul → all-reduce → Q, K, V
@@ -133,7 +166,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
 
         <p><strong>TP度数的选择</strong>直接影响训练效率。TP=2时通信开销几乎可以忽略（因为每个matmul的通信量和计算量完全重叠）。TP=4时通信占比约5-10%。TP=8时通信占比可能到20%以上。所以TP一般不超过节点内的GPU数——8卡节点常用TP=8，4卡节点用TP=4。超过节点范围做TP，跨节点通信延迟会把训练拖垮。</p>
 
-        <h3>8.3 流水线并行(PP)</h3>
+        <h2>8.3 流水线并行(PP)</h2>
 
         <p>流水线并行把模型按层切分到不同设备。最朴素的方式是<strong>GPipe</strong>的做法：将batch分成多个micro-batch，依次送入流水线。但GPipe有个致命问题——<strong>气泡（bubble）</strong>。</p>
 
@@ -149,6 +182,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
 
         <p>3. 通信与计算可以更好重叠：前向和反向之间穿插点对点通信，减少空闲时间。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>调度算法</th>
@@ -179,6 +213,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
                 <td>超大规模、需要极致气泡优化</td>
             </tr>
         </table>
+        </div>
 
         <p>Interleaved 1F1B是进一步的优化：把每张卡的layer再细分成K份，让单张卡交替处理多个layer chunk，进一步降低气泡率。代价是实现复杂度高，且通信次数增加。</p>
 
@@ -186,7 +221,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
             <p><strong>实践建议</strong>：PP的stage数通常设为节点数的整数倍（每个节点放1-2个stage），确保跨节点通信可以充分利用网络带宽。在实际训练中，PP是最容易调优的维度——只要保证micro-batch数量 >= 4×PP_stage数，气泡率就会低于25%。如果不追求极致效率，保持micro-batch = 4×PP_stage是一个简单有效的规则。</p>
         </div>
 
-        <h3>8.4 序列并行与专家并行</h3>
+        <h2>8.4 序列并行与专家并行</h2>
 
         <p>3D并行覆盖了参数和数据两个维度，但还有一个维度没有被触及——<strong>序列长度</strong>。当训练序列长度从2K扩展到128K甚至1M时，单卡存不下完整的序列激活值，于是<strong>序列并行（Sequence Parallelism）</strong>应运而生。</p>
 
@@ -198,6 +233,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
 
         <p>下面这个表总结了三种"新维度"并行：</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>并行技术</th>
@@ -224,8 +260,9 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
                 <td>MoE模型，和DP/TP/PP组合</td>
             </tr>
         </table>
+        </div>
 
-        <h3>8.5 实战：如何选择并行策略</h3>
+        <h2>8.5 实战：如何选择并行策略</h2>
 
         <p>面对一个具体的训练任务，怎么选并行策略？我总结了一个<strong>"三板斧"决策框架</strong>，帮你快速定位。</p>
 
@@ -235,7 +272,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
 
         <p><strong>第三板斧：确定PP stage数和DP规模。</strong>PP把模型按层切分，每个stage的层数尽量均匀。PP stage数乘以每个stage需要的GPU数（TP度数）不能超过总GPU数。剩余GPU分配给DP维度。DP规模 = 总GPU数 / (TP度数 × PP stage数)。</p>
 
-        <pre><code># 示例：用512张H100训练一个70B Dense模型
+        <pre style="overflow-x:auto"><code># 示例：用512张H100训练一个70B Dense模型
 # 参数：70B参数，FP16训练，TP=8，序列长度4096
 # 单卡可放：~40GB参数+优化器（用ZeRO-3）+ 激活值（用activation checkpointing）
 # 估算每层参数量：约1.2亿参数/层（70B/56层）
@@ -263,12 +300,20 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
 
         <p>好了，这一章我们深入探讨了3D并行的三个维度：TP负责层内拆分（通信密集）、PP负责层间切分（气泡与效率的平衡）、DP负责数据扩充（最外层的吞吐扩展）。我们还介绍了序列并行和专家并行这两个新趋势，以及如何根据硬件条件选择并行策略。下一章我们将进入当前大模型训练中最热门的架构——<strong>第9章「MoE混合专家架构」</strong>，看看稀疏模型如何在几乎不增加计算量的情况下倍增参数容量。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Shoeybi et al., <em>Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism</em>, 2019 — <a href="https://arxiv.org/abs/1909.08053">arXiv:1909.08053</a>（8.2 节张量并行）。</li>
+            <li>Narayanan et al., <em>Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM</em>, 2021 — <a href="https://arxiv.org/abs/2104.04473">arXiv:2104.04473</a>（8.3 节 PP 与 1F1B 调度）。</li>
+            <li>Huang et al., <em>GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism</em>, 2018 — <a href="https://arxiv.org/abs/1811.06965">arXiv:1811.06965</a>（8.3 节流水线气泡）。</li>
+            <li>Lepikhin et al., <em>GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding</em>, 2020 — <a href="https://arxiv.org/abs/2006.16668">arXiv:2006.16668</a>（8.4 节专家并行）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="07.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="09.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
