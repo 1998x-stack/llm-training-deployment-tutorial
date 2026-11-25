@@ -6,10 +6,10 @@
     <title>第7章 混合精度与显存优化</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,18 +41,19 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第7章 混合精度与显存优化</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第7章 混合精度与显存优化</h1>
 
         <p>大家好，我是你们的讲师。上一章讲到优化器时，我们提到了一个让人头疼的数字——AdamW需要为每个参数存储两个FP32的动量项，总显存高达56GB（对于7B模型）。这还只是优化器状态。如果所有东西都用FP32来算，7B模型单卡根本训不了。这就是为什么<strong>混合精度训练</strong>几乎是所有大模型训练的标配。</p>
 
         <p>但混合精度不只是"把FP32换成FP16"这么简单。精度降得太低会导致梯度下溢（underflow）或溢出（overflow），模型根本训不动。而且，光靠混合精度还不够——你还需要Gradient Checkpointing、Activation Offloading等技术的配合才能让大模型"挤"进有限的显存中。这一章我们把这些显存优化的"十八般武艺"都过一遍。</p>
 
-        <h3>7.1 为什么需要混合精度？</h3>
+        <h2>7.1 为什么需要混合精度？</h2>
 
         <p>先看一张各种数值精度的对比表。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>精度格式</th>
@@ -103,12 +104,31 @@
                 <td>6.1e-5</td>
             </tr>
         </table>
+        </div>
 
         <p>FP32有23位尾数，精度约为7位有效数字。FP16只有10位尾数，精度约3位有效数字，而且动态范围窄——小于6.5e-5的值会下溢到0，大于6.5e4的值会溢出到Inf。BF16牺牲了尾数位（7位），但保留了FP32同样的8位指数，因此动态范围与FP32相同，只是精度较低（约2-3位有效数字）。FP8是最新的尝试，动态范围极其有限，主要用于推理加速，训练中使用还需要非常小心。</p>
 
+        <figure>
+            <svg viewBox="0 0 720 300" role="img" aria-labelledby="fig7-1-title fig7-1-desc">
+                <title id="fig7-1-title">FP32 / FP16 / BF16 / FP8 的位分配对比</title>
+                <desc id="fig7-1-desc">从左到右每格代表一位：FP32 为 1 位符号 + 8 位指数 + 23 位尾数；FP16 为 1 + 5 + 10；BF16 为 1 + 8 + 7，指数位与 FP32 相同；FP8 的 E4M3 为 1 + 4 + 3，E5M2 为 1 + 5 + 2。</desc>
+                <g font-size="13">
+                    <rect x="90" y="40" width="16" height="26" fill="#94a3b8"></rect><rect x="106" y="40" width="128" height="26" fill="#c4b5fd"></rect><rect x="234" y="40" width="368" height="26" fill="#5eead4"></rect><text x="84" y="58" text-anchor="end" fill="#334155">FP32</text><text x="610" y="58" font-size="11" fill="#475569">32 位</text>
+                    <rect x="90" y="90" width="16" height="26" fill="#94a3b8"></rect><rect x="106" y="90" width="80" height="26" fill="#c4b5fd"></rect><rect x="186" y="90" width="160" height="26" fill="#5eead4"></rect><text x="84" y="108" text-anchor="end" fill="#334155">FP16</text><text x="354" y="108" font-size="11" fill="#475569">16 位</text>
+                    <rect x="90" y="140" width="16" height="26" fill="#94a3b8"></rect><rect x="106" y="140" width="128" height="26" fill="#c4b5fd"></rect><rect x="234" y="140" width="112" height="26" fill="#5eead4"></rect><text x="84" y="158" text-anchor="end" fill="#334155">BF16</text><text x="354" y="158" font-size="11" fill="#475569">16 位</text>
+                    <rect x="90" y="190" width="16" height="26" fill="#94a3b8"></rect><rect x="106" y="190" width="64" height="26" fill="#c4b5fd"></rect><rect x="170" y="190" width="48" height="26" fill="#5eead4"></rect><text x="84" y="208" text-anchor="end" fill="#334155">FP8 E4M3</text><text x="226" y="208" font-size="11" fill="#475569">8 位</text>
+                    <rect x="90" y="240" width="16" height="26" fill="#94a3b8"></rect><rect x="106" y="240" width="80" height="26" fill="#c4b5fd"></rect><rect x="186" y="240" width="32" height="26" fill="#5eead4"></rect><text x="84" y="258" text-anchor="end" fill="#334155">FP8 E5M2</text><text x="226" y="258" font-size="11" fill="#475569">8 位</text>
+                    <rect x="470" y="40" width="14" height="14" fill="#94a3b8"></rect><text x="490" y="52" font-size="12" fill="#334155">符号位</text>
+                    <rect x="470" y="66" width="14" height="14" fill="#c4b5fd"></rect><text x="490" y="78" font-size="12" fill="#334155">指数位</text>
+                    <rect x="470" y="92" width="14" height="14" fill="#5eead4"></rect><text x="490" y="104" font-size="12" fill="#334155">尾数位</text>
+                </g>
+            </svg>
+            <figcaption>图 7-1　各精度格式的位分配（每格一位，格宽仅作示意，不对应真实比例）。BF16 与 FP32 共享 8 位指数，因此动态范围一致、几乎不需要 loss scaling；FP16 指数位只有 5 位，动态范围窄；FP8 的 E4M3 用更多尾数（前向），E5M2 用更多指数（反向）。位分配数据与本页 7.1 节表格一致。</figcaption>
+        </figure>
+
         <p>关键洞察：<strong>模型参数和激活值不需要FP32的全精度</strong>——BF16的7位尾数对于前向传播来说已经足够。但<strong>梯度和优化器状态需要更高的精度</strong>，因为梯度通常会变得非常小，FP16/BF16的精度不足以精确表示梯度更新。这就是"混合"的逻辑基点：用低精度做前向和反向的矩阵计算，用高精度做梯度累积和参数更新。</p>
 
-        <h3>7.2 混合精度训练原理</h3>
+        <h2>7.2 混合精度训练原理</h2>
 
         <p>混合精度训练的工程实现涉及三个核心技术：<strong>Loss Scaling、Autocast、Master Weight Copy</strong>。</p>
 
@@ -118,7 +138,7 @@
 
         <p><strong>Master Weight Copy</strong>指的是维护一份FP32版本的模型参数。即使前向传播用的FP16模型，优化器更新参数时是在FP32的主权重上操作的，更新完后再转成FP16用于下一轮前向。这样做的目的是防止FP16的低精度导致参数更新的累积误差。虽然这意味着要多存一份FP32的参数，但这比用FP16直接做优化器更新要稳定得多。</p>
 
-        <pre><code># PyTorch混合精度训练的标准实现
+        <pre style="overflow-x:auto"><code># PyTorch混合精度训练的标准实现
 from torch.cuda.amp import autocast, GradScaler
 
 model = MyModel(7e9).cuda()
@@ -145,7 +165,7 @@ for batch in dataloader:
     scaler.step(optimizer)
     scaler.update()</code></pre>
 
-        <h3>7.3 BF16 vs FP16 vs FP8</h3>
+        <h2>7.3 BF16 vs FP16 vs FP8</h2>
 
         <p>截至2026年，BF16已经成为大模型训练的<strong>事实上标准</strong>。BF16的动态范围与FP32完全相同，这意味着：<strong>你基本不需要loss scaling</strong>。使用BF16进行混合精度训练时，代码比FP16简单得多——你根本不需要GradScaler，因为BF16几乎不会下溢。这是BF16对FP16的最核心优势。</p>
 
@@ -157,7 +177,7 @@ for batch in dataloader:
             <p><strong>2026年推荐配置</strong>：如果你的GPU支持BF16（H100、A100、H200均支持），无脑用BF16混合精度。不需要loss scaling，代码简洁，训练稳定。如果你的GPU支持FP8且你有工程资源做调优，可以在大模型预训练中使用FP8来降低约30%的训练成本，但要做好遇到精度问题需要调试的准备。</p>
         </div>
 
-        <h3>7.4 Gradient Checkpointing</h3>
+        <h2>7.4 Gradient Checkpointing</h2>
 
         <p>Gradient Checkpointing（也叫Activation Recomputation）是一种经典的<strong>以时间换空间</strong>的显存优化技术。它的原理很简单：正向传播时不保存所有中间激活值，只保存少数"检查点"的激活；反向传播时需要哪些激活值，就从最近的检查点重新计算。</p>
 
@@ -171,7 +191,7 @@ for batch in dataloader:
 
         <p><strong>策略三：算子级recompute。</strong>最精细的控制。在Megatron-LM中，你可以精确控制哪些算子（如dropout、softmax、matmul）要recompute。这需要深入的profiling来识别最佳配置。</p>
 
-        <pre><code># PyTorch中的Gradient Checkpointing使用
+        <pre style="overflow-x:auto"><code># PyTorch中的Gradient Checkpointing使用
 import torch
 import torch.utils.checkpoint as checkpoint
 
@@ -204,7 +224,7 @@ class OptimizedTransformerLayer(nn.Module):
         x = x + self.ffn(x)  # FFN正常计算
         return x</code></pre>
 
-        <h3>7.5 Activation Offloading</h3>
+        <h2>7.5 Activation Offloading</h2>
 
         <p>Gradient Checkpointing的重计算会增加GPU计算时间。而<strong>Activation Offloading</strong>提供了另一种思路：<strong>把激活值从GPU显存卸载到CPU内存</strong>，在需要时才传回GPU。它和checkpointing的核心区别是：offloading不增加计算量，只增加CPU-GPU之间的数据传输时间。</p>
 
@@ -214,6 +234,7 @@ class OptimizedTransformerLayer(nn.Module):
 
         <p><strong>Megatron的Sequence Parallelism</strong>是activation offloading思想的分布式版本。在标准的data parallel训练中，每个设备处理不同的batch，但每个batch内的序列是完整的。Sequence Parallelism将<strong>一个序列</strong>切分到多个设备上——每个设备只计算序列的一部分token的attention。这样做的主要目的是节省序列维度上的激活值显存。对于一个长度为64K的序列，单个设备的激活值内存可以从O(64K²)降到O(64K² / world_size)。这是处理超长序列的关键技术，我们在第12章会详细展开。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>技术</th>
@@ -258,6 +279,7 @@ class OptimizedTransformerLayer(nn.Module):
                 <td>长上下文训练</td>
             </tr>
         </table>
+        </div>
 
         <div class="warning">
             <p><strong>踩坑故事</strong>：一个团队在微调13B模型时发现，不管怎么调整Gradient Checkpointing的参数，显存都不够。他们用了FP16混合精度、开启了checkpointing、batch_size设为1——仍然OOM。最后排查发现，问题出在<strong>KV cache没有被释放</strong>。他们在推理模式下使用model.generate()来做评估，每次评估后没有显式清理KV cache，导致cache在显存中累积。而且训练代码中还有一个bug：<code>model.eval()</code>后没有调<code>torch.cuda.empty_cache()</code>。修复后，同样的配置下显存从"差20%就OOM"降到了"还有15GB余量"。这个故事的教训：<strong>在排查显存问题时，先检查是否有"显存泄漏"——即不再需要的张量是否被正确释放</strong>。用<code>torch.cuda.memory_summary()</code>可以清晰地看到哪些操作在占用显存。</p>
@@ -269,12 +291,20 @@ class OptimizedTransformerLayer(nn.Module):
 
         <p>好的，第7章的内容就到这里。今天我们从混合精度的数值表示讲起，理解了为什么要用低精度、以及BF16为什么是当前的最优选择；然后深入了混合精度的三个核心机制——Loss Scaling、Autocast和Master Weight Copy；接着介绍了显存优化的两大武器——Gradient Checkpointing（以时间换空间）和Activation Offloading（卸载到CPU）。还介绍了2026年FP8训练的最新进展。这些技术配合起来，可以让你在有限的GPU显存中训练更大规模的模型。下一章，我们进入3D并行与大规模训练——当模型大到单节点都放不下时，张量并行、流水线并行和数据并行如何协同工作。这是通往"千卡集群"的第一课。第8章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Micikevicius et al., <em>Mixed Precision Training</em>, 2017 — <a href="https://arxiv.org/abs/1710.03740">arXiv:1710.03740</a>（7.2 节混合精度与 loss scaling）。</li>
+            <li>Kalamkar et al., <em>A Study of BFLOAT16 for Deep Learning Training</em>, 2019 — <a href="https://arxiv.org/abs/1905.12322">arXiv:1905.12322</a>（7.3 节 BF16）。</li>
+            <li>Micikevicius et al., <em>FP8 Formats for Deep Learning</em>, 2022 — <a href="https://arxiv.org/abs/2209.05433">arXiv:2209.05433</a>（7.3 节 E4M3 / E5M2）。</li>
+            <li>Chen et al., <em>Training Deep Nets with Sublinear Memory Cost</em>, 2016 — <a href="https://arxiv.org/abs/1604.06174">arXiv:1604.06174</a>（7.4 节 Gradient Checkpointing）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="06.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="08.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
