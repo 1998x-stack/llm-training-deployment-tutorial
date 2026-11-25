@@ -6,10 +6,10 @@
     <title>第16章 RLHF与奖励模型</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第16章 RLHF与奖励模型</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第16章 RLHF与奖励模型</h1>
 
         <p>大家好，我是你们的讲师。上一章我们讲了SFT——用高质量的指令-回答对让模型学会遵循指令。SFT做了很了不起的事，但它有一个天花板：SFT数据中的每条回答都是人工（或强模型）编写的，它的质量上限取决于标注者的水平。而且SFT只能看到"正面示范"，看不到模型自己的错误回答，更无法让模型在"好"和"更好"之间做出选择。</p>
 
         <p>RLHF（Reinforcement Learning from Human Feedback）就是来打破这个天花板的。它让模型不再被动模仿标注数据，而是主动探索生成策略，通过人类反馈信号来优化自己的行为。ChatGPT之所以在对话体验上远超GPT-3，RLHF功不可没。这一章我们来深入RLHF的每一个组件：理论基础、奖励模型训练、PPO算法、工程挑战，以及那些只有真金白银砸过才能积累的经验。</p>
 
-        <h3>16.1 RLHF的理论基础</h3>
+        <h2>16.1 RLHF的理论基础</h2>
 
         <p>RLHF的核心问题是：<strong>如何在无法写出显式目标函数的情况下，让模型学会符合人类偏好的行为？</strong></p>
 
@@ -59,7 +59,7 @@
 
         <p>数学表达如下：给定一个prompt x，模型生成两个回答 y₁ 和 y₂。人类认为 y₁ 优于 y₂ 的概率是：</p>
 
-        <pre><code>P(y₁ ≻ y₂ | x) = σ(r(x, y₁) - r(x, y₂))
+        <pre style="overflow-x:auto"><code>P(y₁ ≻ y₂ | x) = σ(r(x, y₁) - r(x, y₂))
 
 其中：
 - σ 是sigmoid函数
@@ -71,11 +71,43 @@
 
         <p>RLHF的整体流程分为三个步骤：<strong>（1）SFT基线模型 → （2）奖励模型训练 → （3）PPO强化学习</strong>。第15章已经覆盖了SFT，这一章的重点是第（2）步和第（3）步。</p>
 
+        <figure>
+            <svg viewBox="0 0 720 330" role="img" aria-labelledby="fig16-1-title fig16-1-desc">
+                <title id="fig16-1-title">RLHF 三阶段流程与 PPO 训练循环</title>
+                <desc id="fig16-1-desc">阶段一用示范数据训练 SFT 基线；阶段二用人类偏好对训练奖励模型 RM；阶段三在 PPO 循环中，policy 生成回答，RM 打分并减去相对参考模型的 KL 惩罚得到总奖励，再用 clip 后的策略梯度更新 policy。</desc>
+                <defs>
+                    <marker id="fig16-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+                    </marker>
+                </defs>
+                <g font-size="13" text-anchor="middle">
+                    <rect x="20" y="26" width="200" height="64" rx="10" fill="#eef2ff" stroke="#818cf8"></rect>
+                    <text x="120" y="52" font-weight="700" fill="#3730a3">① SFT 基线</text><text x="120" y="74" font-size="12" fill="#4f46e5">示范数据（第 15 章）</text>
+                    <rect x="260" y="26" width="200" height="64" rx="10" fill="#f0fdf4" stroke="#4ade80"></rect>
+                    <text x="360" y="52" font-weight="700" fill="#166534">② 奖励模型 RM</text><text x="360" y="74" font-size="12" fill="#16a34a">偏好对 pairwise loss</text>
+                    <rect x="500" y="26" width="200" height="64" rx="10" fill="#fff7ed" stroke="#fb923c"></rect>
+                    <text x="600" y="52" font-weight="700" fill="#9a3412">③ PPO 强化学习</text><text x="600" y="74" font-size="12" fill="#ea580c">以下循环</text>
+                    <line x1="220" y1="58" x2="258" y2="58" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig16-1-arrow)"></line>
+                    <line x1="460" y1="58" x2="498" y2="58" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig16-1-arrow)"></line>
+                    <rect x="40" y="128" width="640" height="180" rx="16" fill="#fffbeb" stroke="#fcd34d"></rect>
+                    <text x="360" y="152" font-size="12" fill="#92400e">参考模型 π_ref（冻结）持续提供 KL 锚点</text>
+                    <rect x="70" y="170" width="150" height="56" rx="8" fill="#ffffff" stroke="#fbbf24"></rect><text x="145" y="203" fill="#78350f">Policy 生成 y</text>
+                    <rect x="285" y="170" width="150" height="56" rx="8" fill="#ffffff" stroke="#fbbf24"></rect><text x="360" y="203" fill="#78350f">RM 打分 r(x,y)</text>
+                    <rect x="500" y="170" width="150" height="56" rx="8" fill="#ffffff" stroke="#fbbf24"></rect><text x="575" y="196" fill="#78350f">R = r − β·KL</text><text x="575" y="212" font-size="11" fill="#a16207">(π_θ ‖ π_ref)</text>
+                    <line x1="220" y1="198" x2="283" y2="198" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig16-1-arrow)"></line>
+                    <line x1="435" y1="198" x2="498" y2="198" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig16-1-arrow)"></line>
+                    <path d="M575 230 L575 262 L145 262 L145 230" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fig16-1-arrow)"></path>
+                    <text x="360" y="278" font-size="11" fill="#a16207">PPO clip 策略梯度更新 π_θ</text>
+                </g>
+            </svg>
+            <figcaption>图 16-1　RLHF 三阶段流程：先训 SFT 基线，再用人类偏好对训练奖励模型 RM，最后用 PPO 让 policy 在 RM 打分与相对参考模型 π_ref 的 KL 约束下迭代。虚线回环表示 policy 更新后重新生成回答，形成训练循环。图中 β 为 KL 惩罚系数，clip 范围 ε 等具体取值见正文（教学示意）。</figcaption>
+        </figure>
+
         <div class="highlight">
             <p><strong>核心认知</strong>：RLHF的优美之处在于它将"对齐"这个看似主观的问题转化为了一个可优化的目标函数。但任何转化都有信息损失——Bradley-Terry模型假设偏好是可传递的（A优于B、B优于C → A优于C），但人类的偏好并不总是满足传递性。这个问题我们后面会详细讲。</p>
         </div>
 
-        <h3>16.2 奖励模型训练</h3>
+        <h2>16.2 奖励模型训练</h2>
 
         <p>奖励模型（Reward Model，简称RM）是整个RLHF的"裁判"。它的任务是对任意给定的prompt-response pair输出一个标量分数，代表这个回答在人类偏好上的质量。这个分数将作为PPO阶段policy模型优化的信号。</p>
 
@@ -85,7 +117,7 @@
 
         <p><strong>RM的loss函数</strong>。RM使用pairwise ranking loss进行训练：</p>
 
-        <pre><code># RM的pairwise loss
+        <pre style="overflow-x:auto"><code># RM的pairwise loss
 loss = -log(σ(r_chosen - r_rejected))
 
 # 其中r_chosen和r_rejected分别是RM对chosen和rejected回答的打分
@@ -99,7 +131,7 @@ loss = -log(σ(r_chosen - r_rejected))
             <p><strong>踩坑案例</strong>：我们团队在训练一个客服场景的RM时发现，RM对包含"抱歉给您带来不便"的回答普遍打高分。分析发现：标注数据中有大量客服场景的对答，"道歉句式"与"好回答"产生了spurious correlation。结果RLHF训练后的模型变成了一个"过度道歉机"——无论用户问什么，回答前先道歉一句。这个教训告诉我们：RM数据中的spurious correlation会直接转化为模型行为的bias，必须在数据收集阶段就考虑bias控制。</p>
         </div>
 
-        <h3>16.3 PPO训练详解</h3>
+        <h2>16.3 PPO训练详解</h2>
 
         <p>RLHF的第三步——PPO（Proximal Policy Optimization）——是整个流程中最复杂、最不稳定的一步。PPO最初是在游戏AI和机器人控制中发展起来的RL算法，OpenAI将其引入语言模型对齐，从此成为标准范式。</p>
 
@@ -113,7 +145,7 @@ loss = -log(σ(r_chosen - r_rejected))
 
         <p><strong>Value Function</strong>。PPO使用一个value network（critic）来估计状态的价值（expected future reward）。这个value network与policy network共享底层transformer，但在top层分叉。Value network的loss通常使用MSE，训练目标是准确估计每个token位置的value。</p>
 
-        <pre><code># PPO loss函数的核心公式（简化版）
+        <pre style="overflow-x:auto"><code># PPO loss函数的核心公式（简化版）
 # L_policy = -E[ min(ratio * A, clip(ratio, 1-ε, 1+ε) * A) ]
 # 其中：
 # ratio = π_new(y|x) / π_old(y|x)  # 新老policy的概率比
@@ -128,7 +160,7 @@ loss = -log(σ(r_chosen - r_rejected))
             <p><strong>实践建议</strong>：KL penalty的系数β是一个非常敏感的超参。β太大会压制模型的探索能力，导致RLHF的效果接近SFT；β太小模型会快速钻RM的漏洞。推荐的做法是使用"adaptive KL"——设定一个KL目标值（例如0.01 nats/token），动态调整β，使得实际KL散度接近目标。这个机制在DeepSpeed Chat和TRL库中都有实现。</p>
         </div>
 
-        <h3>16.4 PPO的工程挑战</h3>
+        <h2>16.4 PPO的工程挑战</h2>
 
         <p>PPO的工程实现远比SFT复杂。说它是"大模型训练中最难实现的算法"也不为过。</p>
 
@@ -138,6 +170,7 @@ loss = -log(σ(r_chosen - r_rejected))
 
         <p><strong>四个模型同时驻留的内存压力</strong>。PPO训练时需要同时加载四个模型：<strong>Policy Model</strong>（正在优化的模型）、<strong>Reference Model</strong>（冻结的SFT模型，用于KL散度计算）、<strong>Reward Model</strong>（用于给回答打分）、<strong>Value Model</strong>（critic，通常与policy共享backbone）。如果是70B级别的模型，四个模型就需要4 × 140GB ≈ 560GB显存（FP16下）。加上优化器状态，实际需要的GPU数量极为可观。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>模型</th>
@@ -170,10 +203,11 @@ loss = -log(σ(r_chosen - r_rejected))
                 <td>共享policy backbone</td>
             </tr>
         </table>
+        </div>
 
         <p>解决内存压力的主流方案是"模型卸载"（model offloading）：将不参与前向传播的模型暂时卸载到CPU内存。比如在policy做前向生成时，RM和Reference Model可以暂时放到CPU上，等生成完成后再加载回GPU计算reward和KL。这虽然增加了通信开销，但能让单机可承载的模型规模翻倍。</p>
 
-        <h3>16.5 RLHF的坑与解决方案</h3>
+        <h2>16.5 RLHF的坑与解决方案</h2>
 
         <p>RLHF经过多年实践，业界已经总结出一套避坑指南。这里列几个最常遇到的。</p>
 
@@ -183,7 +217,7 @@ loss = -log(σ(r_chosen - r_rejected))
 
         <p><strong>在/离线策略差距。</strong>严格来说，PPO是on-policy算法——它需要从当前policy采样新数据来训练。但实际工程中，每次PPO迭代都做全量采样的计算成本极高。很多团队退而采用off-policy方案：复用一段时间的采样数据，配合importance sampling correction。但importance sampling在语言模型场景下的方差非常大，导致训练不稳定。一个实用的折中是"部分在线"策略：每次迭代只用最新checkpoint采样20%的新数据，其余80%复用之前的采样数据。</p>
 
-        <pre><code># 实践中的RLHF训练循环
+        <pre style="overflow-x:auto"><code># 实践中的RLHF训练循环
 for iteration in range(num_iterations):
     # Step 1: 从当前policy采样
     prompts = sample_prompts(batch_size=1024)
@@ -212,12 +246,20 @@ for iteration in range(num_iterations):
 
         <p>好了，第16章到这里就结束了。这一章我们从RLHF的理论基础出发，理解了为什么我们需要RLHF而不仅仅是SFT，深入了奖励模型的训练策略和常见bias问题，拆解了PPO训练的四个关键组件，分析了PPO的工程挑战——训练不稳定、reward hacking、四模型内存压力，最后总结了RLHF实战中的常见陷阱和解决方案。RLHF的效果确实是SFT难以企及的，但它的成本和复杂度也是实实在在的。有没有一种更简单的方法能达到类似的效果呢？这就是下一章的主题。<strong>第17章「DPO与偏好对齐优化」</strong>，我们来看如何"绕过"显式RLHF，用更精巧的方法实现偏好对齐。下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Christiano et al., <em>Deep Reinforcement Learning from Human Preferences</em>, 2017 — <a href="https://arxiv.org/abs/1706.03741">arXiv:1706.03741</a>（16.1 节 Bradley-Terry 偏好模型）。</li>
+            <li>Stiennon et al., <em>Learning to summarize from human feedback</em>, 2020 — <a href="https://arxiv.org/abs/2009.01325">arXiv:2009.01325</a>（16.2 节奖励模型训练）。</li>
+            <li>Schulman et al., <em>Proximal Policy Optimization Algorithms</em>, 2017 — <a href="https://arxiv.org/abs/1707.06347">arXiv:1707.06347</a>（16.3 节 PPO）。</li>
+            <li>Ouyang et al., <em>Training language models to follow instructions with human feedback</em>（InstructGPT）, 2022 — <a href="https://arxiv.org/abs/2203.02155">arXiv:2203.02155</a>（16.3 节 RLHF 全流程）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="15.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="17.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
