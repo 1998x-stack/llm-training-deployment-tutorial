@@ -6,10 +6,10 @@
     <title>第3章 Tokenizer原理与实践</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第3章 Tokenizer原理与实践</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第3章 Tokenizer原理与实践</h1>
 
         <p>大家好，我是你们的讲师。上一章我们讲了数据清洗和配比，到了这一步，你的文本数据已经是干净的、高质量的、精心配比的——但模型还读不懂它。模型只认识数字、只处理固定长度的向量序列。把文本变成模型能吃进去的数字序列，这就是<strong>tokenizer</strong>的工作。</p>
 
         <p>Tokenizer可能是整个训练链路中最不起眼但也最容易翻车的环节。为什么这么说？因为tokenizer的问题通常不会导致训练失败（loss还会正常下降），但会导致一个隐蔽得多的后果：<strong>模型在某些任务上永远达不到预期效果</strong>，而你根本想不到问题出在tokenizer上。我见过一个做中文代码生成模型的团队，训练数据和模型架构都没问题，但生成的代码永远缺括号——最后发现是因为英文括号在中文语境下被tokenizer分错了。所以这一章，我们深度拆解tokenizer的原理、实践和常见坑点。</p>
 
-        <h3>3.1 为什么需要Tokenizer？</h3>
+        <h2>3.1 为什么需要Tokenizer？</h2>
 
         <p>简单来说，tokenizer的作用就是将一段文本切分成一系列<strong>token</strong>（词元），再把每个token映射到一个整数ID。这个ID就是模型Embedding层的输入。</p>
 
@@ -63,13 +63,47 @@
 
         <p><strong>模型的知识表达</strong>：tokenizer的分词粒度决定了模型"看到"的信息单元。如果"reinforcement learning"被分成了一个token，模型可以直接学习到这个概念的整体语义。如果被分成了<code>["rein", "forcement", "learning"]</code>，模型就需要先从碎片中拼出概念，效率降低。</p>
 
-        <h3>3.2 BPE算法深度解析</h3>
+        <h2>3.2 BPE算法深度解析</h2>
 
         <p>BPE（Byte Pair Encoding）是目前最主流的tokenization算法，被GPT系列、Llama系列等几乎所有主流模型采用。它的核心思想很巧妙：<strong>从字符级开始，逐步合并最频繁出现的相邻token对，直到达到目标词汇表大小</strong>。</p>
 
         <p>我们来走一遍完整的BPE训练过程。假设我们有这样一个小小的训练语料：</p>
 
-        <pre><code># 初始语料（字符级拆分）
+        <figure>
+            <svg viewBox="0 0 720 300" role="img" aria-labelledby="fig3-1-title fig3-1-desc">
+                <title id="fig3-1-title">BPE 合并过程示例：lowest 的分词演化</title>
+                <desc id="fig3-1-desc">字符序列 l o w e s t 先合并相邻的 s 与 t 得到 st，再合并 e 与 st 得到 est；随后把 l、o、w 合并为 low。最终 lowest 被切成 low 与 est 两个子词 token。</desc>
+                <g font-size="14" text-anchor="middle">
+                    <text x="20" y="76" text-anchor="start" font-size="13" fill="#475569">① 初始：字符级拆分</text>
+                    <rect x="150" y="52" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="171" y="78" fill="#3730a3">l</text>
+                    <rect x="196" y="52" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="217" y="78" fill="#3730a3">o</text>
+                    <rect x="242" y="52" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="263" y="78" fill="#3730a3">w</text>
+                    <rect x="288" y="52" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="309" y="78" fill="#3730a3">e</text>
+                    <rect x="334" y="52" width="42" height="40" rx="8" fill="#fce7f3" stroke="#f472b6"></rect><text x="355" y="78" fill="#9d174d">s</text>
+                    <rect x="380" y="52" width="42" height="40" rx="8" fill="#fce7f3" stroke="#f472b6"></rect><text x="401" y="78" fill="#9d174d">t</text>
+                    <text x="20" y="166" text-anchor="start" font-size="13" fill="#475569">② 合并最频繁对：s+t→st，e+st→est</text>
+                    <rect x="150" y="142" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="171" y="168" fill="#3730a3">l</text>
+                    <rect x="196" y="142" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="217" y="168" fill="#3730a3">o</text>
+                    <rect x="242" y="142" width="42" height="40" rx="8" fill="#eef2ff" stroke="#818cf8"></rect><text x="263" y="168" fill="#3730a3">w</text>
+                    <rect x="288" y="142" width="90" height="40" rx="8" fill="#dcfce7" stroke="#4ade80"></rect><text x="333" y="168" fill="#166534">est</text>
+                    <text x="20" y="250" text-anchor="start" font-size="13" fill="#475569">③ 合并 l+o+w→low，得到最终两个 token</text>
+                    <rect x="150" y="226" width="90" height="40" rx="8" fill="#fff7ed" stroke="#fb923c"></rect><text x="195" y="252" fill="#9a3412">low</text>
+                    <rect x="250" y="226" width="90" height="40" rx="8" fill="#dcfce7" stroke="#4ade80"></rect><text x="295" y="252" fill="#166534">est</text>
+                </g>
+                <g stroke="#94a3b8" stroke-width="2" marker-end="url(#fig3-1-arrow)">
+                    <line x1="171" y1="96" x2="171" y2="138"></line>
+                    <line x1="171" y1="186" x2="171" y2="222"></line>
+                </g>
+                <defs>
+                    <marker id="fig3-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+                    </marker>
+                </defs>
+            </svg>
+            <figcaption>图 3-1　BPE 合并过程示意：从字符级序列出发，每次合并语料中频率最高的一对相邻 token，直到达到目标词表大小。如图所示，lowest 会被切成 low 与 est 两个子词 token。此处使用的是教材式小语料（教学示意），真实训练在数十亿 token 上统计合并频率。</figcaption>
+        </figure>
+
+        <pre style="overflow-x:auto"><code># 初始语料（字符级拆分）
 "low": 5, "lower": 2, "newest": 6, "widest": 3
 
 # 第1步：初始词汇表（所有唯一字符）
@@ -93,10 +127,11 @@ l, o, w, e, r, n, s, t, i, d
 
         <p>实际训练中，BPE的词汇表大小一般在32,000到128,000之间。词汇表越大，每个token携带的信息量越多（压缩率越高），但Embedding层的参数也越多，推理时<strong>softmax</strong>的代价也越大。32K词汇表的embedding矩阵大约是(32768 × 4096) ≈ 1.34亿个参数——对于7B模型来说还不算大，但对于部署在手机上的小模型，这个开销就不可忽视了。</p>
 
-        <h3>3.3 主流Tokenizer对比</h3>
+        <h2>3.3 主流Tokenizer对比</h2>
 
         <p>不同模型家族使用不同风格的tokenizer，理解它们的差异对于选择合适的tokenizer（或者理解你使用的模型的tokenizer行为）至关重要。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>特性</th>
@@ -147,6 +182,7 @@ l, o, w, e, r, n, s, t, i, d
                 <td>一般</td>
             </tr>
         </table>
+        </div>
 
         <p>其中需要特别关注的是<strong>SentencePiece</strong>的"不预分词"设计。传统的BPE（如GPT-2使用的）需要先用规则将文本切分成词（pre-tokenization），然后再对词内进行BPE。这意味着空格等分隔符被当作token边界，<code>"hello"</code>和<code>"hello!"</code>的分词结果可能在词级别完全不同。SentencePiece直接将原始文本（包括空格）作为输入，不做任何预分词，解决了多语言场景中空格边界不一致的问题——中文、日文等不使用空格的语言在预分词阶段往往表现很差，而SentencePiece就避免了这个问题。</p>
 
@@ -154,7 +190,7 @@ l, o, w, e, r, n, s, t, i, d
             <p><strong>选型建议</strong>：如果你要训练一个主要面向中文和英文的双语模型，推荐使用SentencePiece + BPE的组合（即Llama方案），词汇表大小设为32K-64K。如果主要是英文场景，GPT的tiktoken方案已经非常成熟。如果你需要支持大量低资源语言（如东南亚语言），千万要选byte-level的tokenizer（如SentencePiece的byte模式），避免产生大量UNK token导致信息丢失。</p>
         </div>
 
-        <h3>3.4 Tokenizer设计决策</h3>
+        <h2>3.4 Tokenizer设计决策</h2>
 
         <p>选定了tokenizer类型之后，你还需要做几个关键设计决策。这些决策会直接影响模型的最终表现。</p>
 
@@ -164,7 +200,7 @@ l, o, w, e, r, n, s, t, i, d
 
         <p><strong>多语言tokenization策略。</strong>如果你要做多语言模型，一个常见策略是在训练tokenizer时按语言比例对数据进行上采样，确保低频语言也能产生足够的token。但不是所有语言的字符集都适合放在tokenizer中——比如阿拉伯语和希伯来语的从右到左书写方向、中文和日文的大字符集、韩语的组合式文字，每种都需要不同的处理策略。一个实用的建议是：<strong>确保每种目标语言在你的tokenizer训练数据中至少有1GB的纯文本</strong>，否则该语言在tokenizer中的覆盖率会很低。</p>
 
-        <h3>3.5 Tokenizer常见问题</h3>
+        <h2>3.5 Tokenizer常见问题</h2>
 
         <p>下面这几个问题是实际项目中反复出现的"tokenizer杀手"，每一个都是我或我身边的团队踩过的坑。</p>
 
@@ -174,7 +210,7 @@ l, o, w, e, r, n, s, t, i, d
 
         <p><strong>数字和代码的分词问题。</strong>数字是tokenizer的老大难。对于<code>3.1415926535</code>，一个基于BPE的tokenizer可能把它分成<code>["3", ".14", "15", "92", "65", "35"]</code>——完全没有保留数字的数值连续性。这直接导致<strong>大模型的数学能力受限</strong>：模型知道"3.14"是π的近似值，但当你问"3.14后面的数字是什么"时，它无法从token序列中推断出"15"紧随其后，因为表示层已经碎了。代码数据也有类似问题——缩进（空格和tab的混合）、换行符、Unicode标识符都可能导致奇怪的切分。</p>
 
-        <pre><code># 同一个数学表达式的不同tokenization结果对比
+        <pre style="overflow-x:auto"><code># 同一个数学表达式的不同tokenization结果对比
 expression = "3.1415926535 * 2 = 6.283185307"
 
 # GPT-4 tokenizer (tiktoken) 示例：
@@ -195,12 +231,19 @@ expression = "3.1415926535 * 2 = 6.283185307"
 
         <p>好的，第3章就到这里。今天我们系统地学习了tokenizer的原理、主流方案、设计决策和常见坑点。Tokenizer是模型和文本之间的桥梁，它做得好不好，直接决定了模型"看到"的世界是什么样子的。下一章，我们终于要进入Transformer架构本身了——自注意力机制、位置编码、FFN设计，这些才是模型的"大脑"。把tokenizer的基础打牢，我们再深入模型的内部。第4章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Sennrich et al., <em>Neural Machine Translation of Rare Words with Subword Units</em>, 2015 — <a href="https://arxiv.org/abs/1508.07909">arXiv:1508.07909</a>（3.2 节 BPE 的原始提出）。</li>
+            <li>Kudo &amp; Richardson, <em>SentencePiece: A simple and language independent subword tokenizer and detokenizer</em>, 2018 — <a href="https://arxiv.org/abs/1808.06226">arXiv:1808.06226</a>（3.3 节 SentencePiece）。</li>
+            <li>Rust et al., <em>How Good is Your Tokenizer? On the Monolingual Performance of Multilingual Language Models</em>, 2020 — <a href="https://arxiv.org/abs/2012.15613">arXiv:2012.15613</a>（3.1 节分词对下游性能的影响）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="02.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="04.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
