@@ -6,10 +6,10 @@
     <title>第1章 大模型训练全景图</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html" class="active">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第1章 大模型训练全景图</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第1章 大模型训练全景图</h1>
 
         <p>大家好，我是你们的讲师。今天我们来聊一个既让人兴奋又让人头疼的话题——大模型训练。说它兴奋，是因为我们正处在AI历史上最激动人心的时代：从GPT横扫全球到DeepSeek震惊业界，大模型的能力每半年就上一个台阶。说它头疼，是因为这个领域的知识体系庞大得像一座迷宫：预训练、SFT、RLHF、MoE、量化、推理优化……每一个词背后都是一整套工程学问。</p>
 
         <p>我见过太多团队踩进同一个坑：GPU集群到位了，框架选好了，数据集也攒了几TB，结果训练了三个星期，loss就是不降。有人发现是tokenizer没训练好，有人发现数据里有30%的噪声，还有人发现并行策略选错了，GPU利用率不到10%。这些问题的根因只有一个——<strong>对训练全链路缺乏整体认知</strong>。所以这门课的第一章，我们先不碰代码，上来画一张"全景图"，让你脑子里建立起整个训练-部署流程的地图。</p>
 
-        <h3>1.1 从GPT到DeepSeek：大模型演进简史</h3>
+        <h2>1.1 从GPT到DeepSeek：大模型演进简史</h2>
 
         <p>要理解"训练"这件事的本质，先得知道模型是怎么"长"成今天这样的。我把关键里程碑梳理一下。</p>
 
@@ -118,9 +118,56 @@
 
         <p>看这张表你会发现一个规律：<strong>每一次能力跃升，背后都是训练技术的突破</strong>——要么是数据规模扩大（GPT-2→GPT-3），要么是对齐方法的革新（RLHF），要么是架构的优化（MoE）。这正是我们这门课要深入拆解的东西。</p>
 
-        <h3>1.2 预训练→后训练→部署：三阶段范式</h3>
+        <h2>1.2 预训练→后训练→部署：三阶段范式</h2>
 
         <p>今天的大模型训练，几乎所有的技术栈都围绕一个<strong>三阶段范式</strong>展开。不管你用的是Llama还是Qwen，不管你在做中文模型还是代码模型，这个框架都适用。</p>
+
+        <figure>
+            <svg viewBox="0 0 720 300" role="img" aria-labelledby="fig1-1-title fig1-1-desc">
+                <title id="fig1-1-title">大模型训练与部署的三阶段范式</title>
+                <desc id="fig1-1-desc">左栏预训练在万亿级原始文本上做下一词预测得到基座模型；中栏后训练先做有监督微调，再做偏好对齐，得到对齐模型；右栏部署阶段经量化与推理优化后输出在线服务或端侧模型。</desc>
+                <defs>
+                    <marker id="fig1-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+                    </marker>
+                </defs>
+                <rect x="16" y="36" width="204" height="228" rx="16" fill="#eef2ff" stroke="#c7d2fe"></rect>
+                <text x="118" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#4338ca">① 预训练</text>
+                <rect x="42" y="82" width="152" height="40" rx="10" fill="#ffffff" stroke="#8b5cf6"></rect>
+                <text x="118" y="107" text-anchor="middle" font-size="13" fill="#4c1d95">万亿级原始文本</text>
+                <line x1="118" y1="122" x2="118" y2="146" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <rect x="42" y="148" width="152" height="40" rx="10" fill="#ffffff" stroke="#8b5cf6"></rect>
+                <text x="118" y="173" text-anchor="middle" font-size="13" fill="#4c1d95">下一词预测</text>
+                <line x1="118" y1="188" x2="118" y2="212" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <rect x="42" y="214" width="152" height="34" rx="10" fill="#ddd6fe" stroke="#7c3aed"></rect>
+                <text x="118" y="236" text-anchor="middle" font-size="13" fill="#4c1d95">Base Model</text>
+                <rect x="258" y="36" width="204" height="228" rx="16" fill="#f0fdf4" stroke="#bbf7d0"></rect>
+                <text x="360" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#15803d">② 后训练</text>
+                <rect x="284" y="82" width="152" height="40" rx="10" fill="#ffffff" stroke="#22c55e"></rect>
+                <text x="360" y="107" text-anchor="middle" font-size="13" fill="#14532d">指令-回答数据</text>
+                <line x1="360" y1="122" x2="360" y2="146" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <rect x="284" y="148" width="152" height="40" rx="10" fill="#ffffff" stroke="#22c55e"></rect>
+                <text x="360" y="173" text-anchor="middle" font-size="13" fill="#14532d">SFT → 偏好对齐</text>
+                <line x1="360" y1="188" x2="360" y2="212" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <rect x="284" y="214" width="152" height="34" rx="10" fill="#bbf7d0" stroke="#16a34a"></rect>
+                <text x="360" y="236" text-anchor="middle" font-size="13" fill="#14532d">Aligned Model</text>
+                <rect x="500" y="36" width="204" height="228" rx="16" fill="#fff7ed" stroke="#fed7aa"></rect>
+                <text x="602" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#c2410c">③ 部署</text>
+                <rect x="526" y="82" width="152" height="40" rx="10" fill="#ffffff" stroke="#f97316"></rect>
+                <text x="602" y="107" text-anchor="middle" font-size="13" fill="#7c2d12">量化 / 推理优化</text>
+                <line x1="602" y1="122" x2="602" y2="146" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <rect x="526" y="148" width="152" height="40" rx="10" fill="#ffffff" stroke="#f97316"></rect>
+                <text x="602" y="173" text-anchor="middle" font-size="13" fill="#7c2d12">服务引擎 / 端侧</text>
+                <line x1="602" y1="188" x2="602" y2="212" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <rect x="526" y="214" width="152" height="34" rx="10" fill="#fed7aa" stroke="#ea580c"></rect>
+                <text x="602" y="236" text-anchor="middle" font-size="13" fill="#7c2d12">推理 API / 端侧</text>
+                <line x1="220" y1="231" x2="258" y2="231" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <line x1="462" y1="231" x2="500" y2="231" stroke="#94a3b8" stroke-width="2" marker-end="url(#fig1-1-arrow)"></line>
+                <text x="239" y="20" text-anchor="middle" font-size="12" fill="#64748b">冻结</text>
+                <text x="481" y="20" text-anchor="middle" font-size="12" fill="#64748b">上线</text>
+            </svg>
+            <figcaption>图 1-1　三阶段范式：预训练产出基座模型，后训练（SFT + 偏好对齐）产出对齐模型，部署阶段经量化与推理优化后交付在线服务或端侧模型。三个阶段的成本依次相差约一个数量级（成本区间为本课程教学示意，用于说明量级差异，非具体项目报价）。</figcaption>
+        </figure>
 
         <p><strong>第一阶段：预训练（Pre-training）。</strong>这是最"烧钱"的阶段。模型在数万亿token的文本上做next token prediction——给你前文，预测下一个词。这一阶段产出的叫<strong>base model</strong>（基座模型）。Base model的能力就像一张白纸上有了基本轮廓：它懂语法、懂常识、懂知识，但不会"对话"——你问它问题，它可能会继续续写而不是回答。</p>
 
@@ -163,7 +210,7 @@
             <p><strong>核心认知</strong>：很多团队只关注"训练"这一个环节，忽视了部署优化的反作用。我见过一个团队花300万美元训了一个70B模型，结果上生产时发现推理延迟太高，不得不重新蒸馏成8B，精度掉了不少。如果你一开始就想好了部署场景，在训练阶段就可以为蒸馏、量化做铺垫——比如在SFT阶段就用知识蒸馏的loss。</p>
         </div>
 
-        <h3>1.3 为什么从零训练一个模型？</h3>
+        <h2>1.3 为什么从零训练一个模型？</h2>
 
         <p>在GPT-4和Claude能力如此强大的今天，你可能会问：<strong>为什么不直接调用API，非要自己训练？</strong>这个问题问得好，实际上90%的场景确实不需要从零训练。但剩下的10%，恰恰是这门课的核心受众。</p>
 
@@ -181,7 +228,7 @@
 
         <p>是否从零训练，我建议你用这个判断标准：<strong>SFT和alignment解决不了的问题，才考虑pre-training或mid-training</strong>。先用API调优（prompt engineering），然后是fine-tuning（PEFT或full SFT），再然后是mid-training（领域继续预训练），最后才是从头pre-training。每一步成本差一个数量级，别一上来就王炸。</p>
 
-        <h3>1.4 2026年技术全景</h3>
+        <h2>1.4 2026年技术全景</h2>
 
         <p>截至2026年中，大模型训练领域有几个不可忽视的趋势，我们在后续章节会逐一展开，这里先做个鸟瞰。</p>
 
@@ -193,13 +240,13 @@
 
         <p><strong>端侧部署迎来爆发。</strong>高通、联发科、Apple都在SoC中集成了NPU，端侧跑7B模型已经不是幻想。但端侧部署意味着模型必须足够小（量化到INT4甚至INT2），同时又不能太笨。训练阶段就考虑"被蒸馏""被量化"的模型（Quantization-Aware Training），而非训完再压缩，是2026年的主流做法。</p>
 
-        <pre><code># 2026年典型的大模型训练-部署链路（概念示意）
-# 每一行对应一门课的一个核心环节
-pre_training:    data_pipeline -> tokenizer -> transformer -> 3D_parallel
-post_training:   sft -> rlhf/dpo -> rlvr -> peft
-deployment:      quantization -> kv_cache_opt -> vllm_serving -> edge_deploy</code></pre>
+        <pre><code># 2026 典型训练-部署链路（教学示意）
+pretrain  : data->tokenizer->transformer
+            ->3D_parallel
+posttrain : sft->rlhf/dpo->rlvr->peft
+deploy    : quantize->kv_cache->vllm->edge</code></pre>
 
-        <h3>1.5 本课程学习路线图</h3>
+        <h2>1.5 本课程学习路线图</h2>
 
         <p>这门课一共28章，分成六个部分。下面是每部分的内容定位和你完成后能掌握的能力。</p>
 
@@ -221,12 +268,20 @@ deployment:      quantization -> kv_cache_opt -> vllm_serving -> edge_deploy</co
 
         <p>好了，第一章的内容就到这里。这一章我们画了一张大模型训练的大地图：看到了模型从GPT到DeepSeek的演进路线，理解了预训练→后训练→部署的三阶段范式，分析了从零训练的场景与风险，也预览了2026年的技术趋势和本课程的学习路径。从下一章开始，我们就要深入具体的环节了。<strong>第2章「预训练数据工程」</strong>，会带着大家走进训练链路的第一个也是最重要的环节——数据。数据质量决定了模型能力的上限，而训练只是逼近这个上限。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Brown et al., <em>Language Models are Few-Shot Learners</em>（GPT-3）, 2020 — <a href="https://arxiv.org/abs/2005.14165">arXiv:2005.14165</a>（1.1 节 GPT-3 与 in-context learning）。</li>
+            <li>Kaplan et al., <em>Scaling Laws for Neural Language Models</em>, 2020 — <a href="https://arxiv.org/abs/2001.08361">arXiv:2001.08361</a>（1.4 节与第 11 章 Scaling Laws）。</li>
+            <li>DeepSeek-AI, <em>DeepSeek-V3 Technical Report</em>, 2024 — <a href="https://arxiv.org/abs/2412.19437">arXiv:2412.19437</a>（1.1 / 1.4 节 MoE 与训练效率）。</li>
+            <li>DeepSeek-AI, <em>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</em>, 2025 — <a href="https://arxiv.org/abs/2501.12948">arXiv:2501.12948</a>（1.4 节 RLVR 推理增强）。</li>
+        </ul>
+
         <div class="footer-nav">
-            <a href="javascript:void(0)">← 上一章</a>
+            <a href="index.html">← 目录</a>
             <a href="index.html">📖 返回目录</a>
             <a href="02.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
