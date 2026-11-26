@@ -6,10 +6,10 @@
     <title>第20章 指令微调与Agent能力</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第20章 指令微调与Agent能力</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第20章 指令微调与Agent能力</h1>
 
         <p>大家好，我是你们的讲师。上一章我们聊了RLVR，让模型学会了"思考"。但思考的最终目的是什么——是<strong>行动</strong>。一个只会回答问题的模型就像一个只会纸上谈兵的谋士，真正的价值在于它能调用工具、执行任务、与环境交互。这就要用到我们今天要讲的主题：Agent能力训练。</p>
 
         <p>2025年以来，业界对LLM的期待已经从"聊天机器人"升级为"Agent操作系统"。模型不再只是"你说一句我回一句"的对话工具，而是要能自主完成多步骤任务：查数据库、写代码、调用API、操作浏览器、甚至协调其他Agent协作。这些能力的根基都在<strong>指令微调</strong>阶段——你在SFT数据里植入了什么能力，模型出厂时就具备什么能力。这一章我们来深入拆解Agent训练的四大核心模块。</p>
 
-        <h3>20.1 Agent能力的训练基础</h3>
+        <h2>20.1 Agent能力的训练基础</h2>
 
         <p>一个合格的Agent模型需要具备三大核心能力：<strong>Instruction Following（指令遵循）、Tool Use（工具调用）和Planning（规划）</strong>。这三个能力虽然相互关联，但训练方法各有侧重。</p>
 
@@ -59,6 +59,7 @@
 
         <p><strong>Planning</strong>是最难的能力。任务是"整理一个关于AI芯片市场分析的PPT"，模型需要先分解子任务：搜索AI芯片行业报告、提取关键数据、确定PPT框架、生成每一页内容、最后格式化输出。每一步都可能需要调用不同的工具，前一步的结果是后一步的输入。规划能力的训练不能只靠SFT，因为规划的搜索空间太大——同一个任务有无数种分解方式，标注者很难给出"最优解"。实践中更多用RL（比如RLVR的变体）来让模型在探索中学会规划。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>能力</th>
@@ -85,18 +86,19 @@
                 <td>AgentBench, WebArena</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>核心认知</strong>：Agent能力的训练和传统SFT有一个根本不同——传统SFT是"记忆"，Agent训练是"策略"。记忆可以靠数据量堆，策略必须靠RL的试错机制去习得。很多团队在Agent训练上砸了海量的SFT数据，结果模型在未见过的工具和场景上仍然表现很差，就是因为缺少RL阶段的策略探索。想做好Agent，RL不是可选项而是必选项。</p>
         </div>
 
-        <h3>20.2 Function Calling训练</h3>
+        <h2>20.2 Function Calling训练</h2>
 
         <p>Function Calling（也叫Tool Calling）是Agent训练中最具体、可操作性最强的部分。说白了就是让模型学会：知道什么时候该调用工具、调用哪个工具、怎么填入参数。</p>
 
         <p>首先来看<strong>function schema的设计</strong>。你在SFT数据中怎么描述一个工具，模型就怎么使用它。业界常用的格式是JSON Schema风格的function definition，包括function name、description、parameters（类型、枚举值、是否必填）。Description的质量极其关键——模型通过description理解"这个工具是干什么的"，措辞要清晰、无歧义、包含边界条件。</p>
 
-        <pre><code>{
+        <pre style="overflow-x:auto"><code>{
   "type": "function",
   "function": {
     "name": "search_flights",
@@ -127,7 +129,37 @@
   }
 }</code></pre>
 
-        <p><strong>多工具调用的训练</strong>是更复杂的场景。用户说"帮我找一下后天从北京到上海的航班，然后订最便宜那班"，模型需要先调search_flights获取结果，解析结果后调book_flight来完成预订。这要求对话数据中包含完整的<strong>tool call chain</strong>：user query → function call → function response → next function call (or) → final answer。每条tool call数据都需要标注出完整的调用轨迹。</p>
+        <p><strong>多工具调用的训练</strong>是更复杂的场景。用户说“帮我找一下后天从北京到上海的航班，然后订最便宜那班”，模型需要先调search_flights获取结果，解析结果后调book_flight来完成预订。这要求对话数据中包含完整的<strong>tool call chain</strong>：user query → function call → function response → next function call (or) → final answer。每条tool call数据都需要标注出完整的调用轨迹。</p>
+
+        <figure>
+            <svg viewBox="0 0 720 340" role="img" aria-labelledby="fig20-1-title fig20-1-desc">
+                <title id="fig20-1-title">多工具调用的 tool call chain</title>
+                <desc id="fig20-1-desc">一条完整轨迹：用户提出请求，模型发出 search_flights 调用，收到航班结果后发出 book_flight 调用，收到确认后输出最终回答。每一步的工具调用与返回结果都被记录为训练数据。</desc>
+                <g font-size="12">
+                    <rect x="40" y="16" width="640" height="44" rx="8" fill="#e2e8f0" stroke="#94a3b8"></rect>
+                    <text x="60" y="34" fill="#64748b">user</text>
+                    <text x="60" y="52" fill="#334155">“找后天北京→上海的航班，订最便宜那班”</text>
+
+                    <rect x="120" y="78" width="560" height="44" rx="8" fill="#c7d2fe" stroke="#6366f1"></rect>
+                    <text x="140" y="96" fill="#4338ca">assistant · tool_call</text>
+                    <text x="140" y="114" fill="#312e81">search_flights(origin=PEK, destination=SHA, date=…)</text>
+
+                    <rect x="120" y="140" width="560" height="44" rx="8" fill="#f1f5f9" stroke="#cbd5e1"></rect>
+                    <text x="140" y="158" fill="#64748b">tool · response</text>
+                    <text x="140" y="176" fill="#334155">[ {flight: CA123, price: 650}, {flight: MU510, price: 820} ]</text>
+
+                    <rect x="120" y="202" width="560" height="44" rx="8" fill="#c7d2fe" stroke="#6366f1"></rect>
+                    <text x="140" y="220" fill="#4338ca">assistant · tool_call</text>
+                    <text x="140" y="238" fill="#312e81">book_flight(flight_id=CA123)</text>
+
+                    <rect x="120" y="264" width="560" height="44" rx="8" fill="#dcfce7" stroke="#16a34a"></rect>
+                    <text x="140" y="282" fill="#166534">assistant · final answer</text>
+                    <text x="140" y="300" fill="#15803d">“已为您预订 CA123（¥650），后天 PEK→SHA”</text>
+                    <line x1="60" y1="60" x2="60" y2="286" stroke="#cbd5e1" stroke-dasharray="4 4"></line>
+                </g>
+            </svg>
+            <figcaption>图 20-1　多工具调用的完整轨迹：一次用户请求触发了两次工具调用（search_flights → book_flight），每次调用与返回结果都按角色记录，成为一条 tool call chain。训练数据需保留整条轨迹，模型才能学会“拿结果、再决策”。具体航班与价格为示例（教学示意）。</figcaption>
+        </figure>
 
         <p>在实践中，多工具调用的SFT数据主要有两个来源：一是<strong>人工标注轨迹</strong>，成本高但质量可控；二是<strong>环境回放</strong>（Trajectory Replay）——让一个teacher模型（比如GPT-4）使用工具完成任务，记录完整的调用轨迹作为训练数据。环境回放的产出量可以做到人工标注的100倍以上，但质量噪声也大——teacher模型也可能犯工具调用错误。推荐的做法是先让teacher模型跑一遍，然后用自动化验证器过滤掉失败的轨迹，只保留成功轨迹做训练。</p>
 
@@ -135,17 +167,36 @@
             <p><strong>踩坑案例</strong>：有一家做AI客服的公司在训练function calling时遇到了一个尴尬的问题——模型学会了"过度调用"。用户说"帮我查一下订单"，模型直接调了三个API：查订单、查物流、查售后政策，一次对话发了12个API请求。原来他们的训练数据里大部分是多步操作场景，模型学到了"调用越多工具说明我越能干"的pattern。解决办法是在数据中加入不需要调用工具即可回答的样本（"我的用户名是什么"——这个不需要调任何API），以及在损失函数中对不必要的function call施加轻微的penalty。</p>
         </div>
 
-        <h3>20.3 多轮对话训练</h3>
+        <h2>20.3 多轮对话训练</h2>
 
         <p>Agent场景天然是多轮对话。但多轮对话的SFT和单轮有很大不同——你不能简单地把多轮对话当成"多个单轮对话拼起来"。关键的技术挑战有三个。</p>
 
-        <p><strong>Loss Masking</strong>是最微妙的技术点。在多轮对话中，模型只需要预测"assistant"角色的token，而对"user"和"system"角色的token应该做loss masking（就是这些token不参与loss计算）。这个看起来很简单，但实践中频繁出问题：masking实现错了导致模型在user query上也在做预测，训练loss下降很快但实际对话效果一塌糊涂——因为模型学会了"预测用户会说什么"而不是"回答用户的问题"。</p>
+        <p><strong>Loss Masking</strong>是最微妙的技术点。在多轮对话中，模型只需要预测“assistant”角色的token，而对“user”和“system”角色的token应该做loss masking（就是这些token不参与loss计算）。这个看起来很简单，但实践中频繁出问题：masking实现错了导致模型在user query上也在做预测，训练loss下降很快但实际对话效果一塌糊涂——因为模型学会了“预测用户会说什么”而不是“回答用户的问题”。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="多轮对话掩码交叉熵损失公式">
+            <math display="block" aria-label="L equals minus one over N sum over t from 1 to N of m sub t log P of y sub t given y less than t">
+                <mrow>
+                    <mi>L</mi><mo>=</mo><mo>−</mo>
+                    <mfrac><mn>1</mn><mi>N</mi></mfrac>
+                    <munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover>
+                    <msub><mi>m</mi><mi>t</mi></msub>
+                    <mi>log</mi><mo>⁡</mo>
+                    <mi>P</mi>
+                    <mo>(</mo>
+                    <msub><mi>y</mi><mi>t</mi></msub>
+                    <mo>∣</mo>
+                    <msub><mi>y</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub>
+                    <mo>)</mo>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 20-1　多轮对话的掩码交叉熵：仅当 mₜ=1（assistant 角色）时该 token 计入损失</span>
+        </div>
 
         <p><strong>上下文窗口管理</strong>是第二个挑战。Agent的多轮对话可能非常长——几十轮甚至上百轮工具调用和结果返回。训练时你不可能把整个历史都塞进上下文。常用的策略是<strong>truncation with recent focus</strong>：保留最近的K轮对话作为完整上下文，更早的历史做摘要压缩或者直接丢弃。在数据准备阶段，每一条训练样本都可以做一次"滑动窗口切片"——从对话历史中截取连续的若干轮作为上下文，最后一轮作为预测目标。</p>
 
         <p><strong>对话状态跟踪</strong>是第三个关键技术。在多轮工具调用中，模型需要记住前面已经完成了什么、还有什么没做。比如用户先说"帮我订一张明天去上海的机票"，模型查完了航班；然后用户说"还是订高铁吧"——模型需要理解"目的地和时间不变，交通工具变了"，而不是当做一个全新的query。训练数据中需要有大量的<strong>指代消解</strong>（coreference resolution）和<strong>状态更新</strong>（state update）样例。</p>
 
-        <pre><code># 多轮对话Loss Masking示意
+        <pre style="overflow-x:auto"><code># 多轮对话Loss Masking示意
 # user_tokens 和 assistant_tokens 是已经拼接好的token序列
 # labels中只有assistant部分的token需要预测
 
@@ -168,7 +219,7 @@ def create_loss_mask(conversation):
             loss_mask.extend([0] * len(tokens))
     return labels, loss_mask</code></pre>
 
-        <h3>20.4 Chain-of-Thought训练</h3>
+        <h2>20.4 Chain-of-Thought训练</h2>
 
         <p>Chain-of-Thought（CoT）训练的核心目标是把模型从"直接输出答案"变成"先思考再输出"。这对Agent能力至关重要——Agent在调用工具之前，需要先思考"需要什么信息、用什么工具获取、参数怎么填"。CoT就是这个"内部思考"的显式化。</p>
 
@@ -182,7 +233,7 @@ def create_loss_mask(conversation):
             <p><strong>实践建议</strong>：CoT训练要特别注意"幻觉蔓延"问题。模型在推理过程中可能会产生错误的前提假设，然后基于错误假设继续推理，导致整个chain崩塌。一个实用的缓解方法是<strong>checkpoint supervision</strong>——在CoT的关键节点插入验证步骤，要求模型确认前一步的结论是否正确后再继续。在训练时，如果发现某个训练样本的CoT包含逻辑断裂或事实错误，宁可丢掉这条数据也不要用来训练，否则模型会学到"不严谨的推理也是可以的"。</p>
         </div>
 
-        <h3>20.5 Agent训练的未来</h3>
+        <h2>20.5 Agent训练的未来</h2>
 
         <p>Agent训练远没到成熟阶段。2026年的前沿探索展现出几个值得关注的趋势。</p>
 
@@ -192,6 +243,7 @@ def create_loss_mask(conversation):
 
         <p><strong>多Agent协作</strong>是最具想象力的方向。未来的应用场景中不会只有一个Agent，而是一群各司其职的Agent协同工作：一个负责规划、一个负责编码、一个负责测试、一个负责撰写文档。训练多Agent协作跟单Agent完全不同——每个Agent需要在SFT阶段就学会"理解其他Agent的输出"、"在合适的时候移交控制权"、"分工合作完成目标"。这实际上是把Agent训练从"个体智能"扩展到了"群体智能"。Google的DataGemma和微软的AutoGen都在尝试这个方向，但目前还没有通用的训练方法论。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>方向</th>
@@ -218,15 +270,24 @@ def create_loss_mask(conversation):
                 <td>通信效率、Credit Assignment</td>
             </tr>
         </table>
+        </div>
 
         <p>Agent训练是一个快速演进的前沿领域。从instruction following到tool调用，从单轮到多轮，从静态SFT到环境RL，每一步都在把模型从一个被动的"问答机器"变成主动的"任务执行者"。下一章我们要进入一个完全不同的但同样重要的领域——<strong>第21章「多模态模型训练」</strong>，让模型不再只懂文字，而是能"看见"图像、理解视频。这是一个全新的维度扩展，咱们下章见。</p>
+
+        <h2>本章参考</h2>
+        <ul>
+            <li>Yao et al., <em>ReAct: Synergizing Reasoning and Acting in Language Models</em>, 2022 — <a href="https://arxiv.org/abs/2210.03629">arXiv:2210.03629</a>（20.1 节 Planning 与 20.4 节 CoT）。</li>
+            <li>Schick et al., <em>Toolformer: Language Models Can Teach Themselves to Use Tools</em>, 2023 — <a href="https://arxiv.org/abs/2302.04761">arXiv:2302.04761</a>（20.2 节工具调用数据）。</li>
+            <li>Wei et al., <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</em>, 2022 — <a href="https://arxiv.org/abs/2201.11903">arXiv:2201.11903</a>（20.4 节 Chain-of-Thought）。</li>
+            <li>Patil et al., <em>Gorilla: Large Language Model Connected with Massive APIs</em>（BFCL/API 评测）, 2023 — <a href="https://arxiv.org/abs/2305.15334">arXiv:2305.15334</a>（20.2 节 function calling）。</li>
+        </ul>
 
         <div class="footer-nav">
             <a href="19.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="21.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
