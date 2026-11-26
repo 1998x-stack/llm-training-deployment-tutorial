@@ -6,10 +6,10 @@
     <title>第12章 长上下文训练技术</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第12章 长上下文训练技术</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第12章 长上下文训练技术</h1>
 
         <p>大家好，我是你们的讲师。"你好，请阅读以下300页PDF文档，然后回答……"——这是2025-2026年LLM应用中最常见的需求之一。从法律合同审查到学术文献综述，从代码仓库分析到长篇小说理解，用户希望模型能"记住"越来越多的上下文。于是我们看到了一场"上下文军备竞赛"：GPT-4从8K到128K，Claude从100K到200K，DeepSeek和Qwen直接冲到了1M token级别。</p>
 
         <p>但一个残酷的事实是：<strong>绝大多数模型在长上下文任务上的表现远不如短上下文</strong>。我测试过一个号称128K上下文的模型，用一篇5万字的法律判决书问细节问题时，准确率不到40%。更讽刺的是，同样的模型在8K上下文内的准确率有85%。问题出在哪？出在训练——你拿训练时只在4K长度上训过的模型，直接推理128K文本，位置编码会"崩溃"，注意力机制无法有效覆盖长距离依赖。这一章我们深入探讨怎么让模型真正"学会"处理长上下文。</p>
 
-        <h3>12.1 位置编码的上下文外推</h3>
+        <h2>12.1 位置编码的上下文外推</h2>
 
         <p>所有长上下文能力的起点是<strong>位置编码（Position Encoding）</strong>。Transformer本身不具备序列顺序感知能力，必须通过位置编码告诉模型token的相对或绝对位置。目前在主流模型中占统治地位的是<strong>RoPE（Rotary Position Embedding）</strong>。</p>
 
@@ -63,16 +63,30 @@
             <p><strong>核心概念</strong>：RoPE的旋转频率决定了每个位置编码的"波长"。低频分量（波长长）负责长距离依赖，高频分量（波长短）负责局部位置区分。成功的长上下文扩展的关键是：让模型在更长序列上仍然能区分相邻位置（高频保留），同时让长距离位置的编码不出界（低频调整）。</p>
         </div>
 
-        <h3>12.2 位置插值方法</h3>
+        <h2>12.2 位置插值方法</h2>
 
         <p>位置插值的核心思想很直接：既然训练时没见过那些"远"的位置，那我们把推理时的位置"压缩"到训练见过的范围内。就像你把一张大图缩放到相框能容纳的尺寸。</p>
 
-        <p><strong>Linear PI（线性位置插值）。</strong>这是最早提出的方法。假设训练时最大序列长度为L_train，推理时期望长度为L_test，将位置索引i缩放到 i × L_train / L_test。这样推理时的位置永远在[0, L_train)范围内，RoPE永远不会遇到未训练过的位置。优点是实现简单，缺点是损失了相邻token的区分度——因为不同位置被"挤"在一起了。实验表明，Linear PI在2-4倍的扩展范围内表现良好，超过8倍后性能下降明显。</p>
+        <p><strong>Linear PI（线性位置插值）。</strong>这是最早提出的方法。假设训练时最大序列长度为L_train，推理时期望长度为L_test，将位置索引i缩放到 i × L_train / L_test。这样推理时的位置永远在[0, L_train)范围内，RoPE永远不会遇到未训练过的位置。优点是实现简单，缺点是损失了相邻token的区分度——因为不同位置被“挤”在一起了。实验表明，Linear PI在2-4倍的扩展范围内表现良好，超过8倍后性能下降明显。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="线性位置插值公式">
+            <math display="block" aria-label="p prime sub i equals i times L train over L test">
+                <mrow>
+                    <msub><mi>p</mi><mi>i</mi></msub><mo>′</mo>
+                    <mo>=</mo>
+                    <mi>i</mi>
+                    <mo>·</mo>
+                    <mfrac><msub><mi>L</mi><mi>train</mi></msub><msub><mi>L</mi><mi>test</mi></msub></mfrac>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 12-1　Linear PI：把推理位置 i 等比例压缩到训练长度范围（Chen 等，2023）</span>
+        </div>
 
         <p><strong>NTK-aware插值。</strong>这是Linear PI的改进版。它的洞察是：RoPE的不同频率分量在不同范围内起作用——高频分量负责局部区分（需要保持拉伸），低频分量负责长距离感知（需要插值压缩）。NTK-aware方法对高频分量做更少的插值（保持分辨力），对低频分量做更多的插值（扩展覆盖范围）。这种方法在8倍甚至16倍扩展时仍能保持较好的性能。</p>
 
         <p><strong>YaRN（Yet another RoPE extensioN）</strong>是目前最先进的位置插值方法。它在NTK-aware的基础上加上了两个关键改进：（1）对Attention logits做温度缩放（temperature scaling），因为插值后的attention distribution比训练时更"平"；（2）使用更精细的频率分组和缩放策略。YaRN在128K到1M的超长扩展中表现最优。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>方法</th>
@@ -110,10 +124,11 @@
                 <td>学术研究</td>
             </tr>
         </table>
+        </div>
 
         <p><strong>ReRoPE（Rectified RoPE）</strong>是一种不需要微调就能扩展上下文的方法。它设定一个"局部窗口"——在窗口内使用正常的位置编码，在窗口外使用重置的位置编码（从0重新开始）。这样模型总是处理"近距离"的token，超长序列被分解成一个一个的局部上下文段。ReRoPE的缺点是需要修改注意力实现，且在跳变的边界处可能损失连贯性。</p>
 
-        <h3>12.3 Ring Attention</h3>
+        <h2>12.3 Ring Attention</h2>
 
         <p>有了位置编码支持长序列还不够——你还得能在显存里放下长序列的注意力计算。这里的问题很直接：<strong>标准Attention的计算量是O(n²)</strong>，n是序列长度。当n=128K时，单层Attention的KV矩阵就需要128K×128K×2字节 ≈ 32GB显存（FP16）。一百多层下来，显存需求轻松突破TB级别。</p>
 
@@ -127,9 +142,39 @@
 
         <p>4. 计算和通信高度重叠：收到上一块KV的同时做当前块的计算，通信延迟被计算时间掩盖。</p>
 
+        <figure>
+            <svg viewBox="0 0 720 320" role="img" aria-labelledby="fig12-1-title fig12-1-desc">
+                <title id="fig12-1-title">Ring Attention 的环形 KV 传递</title>
+                <desc id="fig12-1-desc">长序列沿序列维度切分为 P 个块，每个 GPU 持有一个块。四个 GPU 组成环，每个 GPU 把本地的 KV 块顺时针传给下一个 GPU，同时在本地用收到的 KV 块做局部 attention，通信与计算重叠。转完一圈后每个 GPU 都看到完整的 KV。</desc>
+                <defs>
+                    <marker id="ring-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4338ca"></path></marker>
+                </defs>
+                <g font-size="12">
+                    <path d="M383 63 A90 90 0 0 1 447 127" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#ring-arrow)"></path>
+                    <path d="M447 173 A90 90 0 0 1 383 237" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#ring-arrow)"></path>
+                    <path d="M337 237 A90 90 0 0 1 273 173" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#ring-arrow)"></path>
+                    <path d="M273 127 A90 90 0 0 1 337 63" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#ring-arrow)"></path>
+                    <circle cx="360" cy="60" r="32" fill="#c7d2fe" stroke="#6366f1" stroke-width="2"></circle>
+                    <circle cx="450" cy="150" r="32" fill="#c7d2fe" stroke="#6366f1" stroke-width="2"></circle>
+                    <circle cx="360" cy="240" r="32" fill="#c7d2fe" stroke="#6366f1" stroke-width="2"></circle>
+                    <circle cx="270" cy="150" r="32" fill="#c7d2fe" stroke="#6366f1" stroke-width="2"></circle>
+                    <g text-anchor="middle" fill="#312e81">
+                        <text x="360" y="56">GPU0</text><text x="360" y="72" font-size="11">KV₀</text>
+                        <text x="450" y="146">GPU1</text><text x="450" y="162" font-size="11">KV₁</text>
+                        <text x="360" y="236">GPU2</text><text x="360" y="252" font-size="11">KV₂</text>
+                        <text x="270" y="146">GPU3</text><text x="270" y="162" font-size="11">KV₃</text>
+                    </g>
+                    <text x="360" y="150" text-anchor="middle" font-size="11" fill="#475569">转一圈后每个</text>
+                    <text x="360" y="166" text-anchor="middle" font-size="11" fill="#475569">GPU 看到全部 KV</text>
+                    <text x="360" y="308" text-anchor="middle" fill="#334155">每个 GPU 只传本地 KV 块：总通信量 O(L·d)，与 GPU 数 P 无关</text>
+                </g>
+            </svg>
+            <figcaption>图 12-1　Ring Attention：长序列按序列维度切成 P 块，各 GPU 组成环，顺时针传递本地的 KV 块，同时在本地用收到的块做局部 attention，使通信与计算重叠。一整圈后每个 GPU 都积累了完整 KV，而总通信量只与序列长度 L 成正比、不随 P 增长。GPU 数与块分为示意（教学示意）。</figcaption>
+        </figure>
+
         <p>Ring Attention的通信量分析：每个GPU需要把它的KV块发给下一个人，同时从上一个接收。假设总长度为L，P个GPU，每个块的KV大小是O(L/P × d)。一圈下来，每个GPU发送和接收的总数据量是O(L×d)——和序列长度L成正比，和GPU数P无关。这意味着<strong>Ring Attention的通信开销不随GPU数增加而增加</strong>，这是它最大的优势。</p>
 
-        <pre><code># Ring Attention的通信-计算重叠示意（伪代码）
+        <pre style="overflow-x:auto"><code># Ring Attention的通信-计算重叠示意（伪代码）
 # P个GPU形成环，每个GPU持有长度为 L/P 的序列块
 
 def ring_attention(query_block, kv_block_initial, num_gpus):
@@ -158,7 +203,7 @@ def ring_attention(query_block, kv_block_initial, num_gpus):
             <p><strong>性能要点</strong>：Ring Attention要发挥最佳效果，需要做到"计算时间 >= 通信时间"。如果计算太快而通信太慢，GPU会空等数据。所以Ring Attention最适合的场景是：序列极长（每个块的计算量大）+ 高速互联（NVLink或IB）。如果你的网络是千兆以太网，Ring Attention可能不如朴素实现。</p>
         </div>
 
-        <h3>12.4 序列并行方案的选择</h3>
+        <h2>12.4 序列并行方案的选择</h2>
 
         <p>除了Ring Attention，业界还有其他几种序列并行方案，各有适用场景。</p>
 
@@ -166,6 +211,7 @@ def ring_attention(query_block, kv_block_initial, num_gpus):
 
         <p><strong>Megatron Sequence Parallelism（SP）</strong>是NVIDIA的方案。它和张量并行（TP）紧密结合：在TP切分隐藏维度的基础上，再沿序列维度切分。SP中，TP负责通信隐藏维度结果，SP负责通信序列维度结果，两者共享同一个通信域。SP的优势是和Megatron-LM的TP原生集成，通信可以复用TP的通信组。缺点是灵活性不如Ulysses和Ring Attention——如果你的训练框架不用TP，SP也用不了。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>方案</th>
@@ -196,10 +242,11 @@ def ring_attention(query_block, kv_block_initial, num_gpus):
                 <td>低（配合TP使用）</td>
             </tr>
         </table>
+        </div>
 
         <p>怎么选？我的建议是：如果序列长度在32K以内，Megatron SP + TP就足够了，不需要额外引入序列并行。32K-128K之间，DeepSpeed-Ulysses是最平衡的方案——兼顾效率与实现复杂度。128K以上，必须上Ring Attention，因为只有它能做到通信量不随设备数增长。</p>
 
-        <h3>12.5 百万Token训练实践</h3>
+        <h2>12.5 百万Token训练实践</h2>
 
         <p>把理论落实到实践中，百万token训练需要解决几个工程问题。</p>
 
@@ -221,7 +268,7 @@ def ring_attention(query_block, kv_block_initial, num_gpus):
 
         <p><strong>第三步：SFT with long context。</strong>用长上下文的SFT数据（如"阅读以下100页文档并回答"的指令数据）来微调，让模型学会"使用"扩展后的上下文能力。这是很多人忽略的一步——即使模型能"看"1M token，它需要学会怎么从中找到需要的信息。</p>
 
-        <pre><code># 百万token训练的数据构造策略（概念示意）
+        <pre style="overflow-x:auto"><code># 百万token训练的数据构造策略（概念示意）
 # 阶段1: 8K → 和普通预训练一致
 # 阶段2: 32K → 拼接2-4篇高质量长文档
 # 阶段3: 128K → 拼接1本书 + 4-8篇长文章
@@ -234,12 +281,20 @@ def ring_attention(query_block, kv_block_initial, num_gpus):
 
         <p>好了，这一章我们从位置编码的上下文外推讲起，对比了Linear PI、NTK-aware、YaRN和ReRoPE等位置插值方法的优劣，介绍了Ring Attention的通信-计算重叠机制，分析了三大序列并行方案的选型，最后给出了百万token训练的工程实践指南。长上下文能力已经成为大模型的"标配"，掌握这些技术是训练工程师的必修课。下一章我们将转向一个和数据相关的重要话题——<strong>第13章「合成数据与数据配比」</strong>，探讨高质量合成数据如何改变训练游戏规则。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Su et al., <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em>, 2021 — <a href="https://arxiv.org/abs/2104.09864">arXiv:2104.09864</a>（12.1 节 RoPE）。</li>
+            <li>Chen et al., <em>Extending Context Window of Large Language Models via Positional Interpolation</em>, 2023 — <a href="https://arxiv.org/abs/2306.15595">arXiv:2306.15595</a>（12.2 节 Linear PI）。</li>
+            <li>Peng et al., <em>YaRN: Efficient Context Window Extension of Large Language Models</em>, 2023 — <a href="https://arxiv.org/abs/2309.00071">arXiv:2309.00071</a>（12.2 节 YaRN）。</li>
+            <li>Liu et al., <em>Ring Attention with Blockwise Transformers for Near-Infinite Context</em>, 2023 — <a href="https://arxiv.org/abs/2310.01889">arXiv:2310.01889</a>（12.3 节 Ring Attention）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="11.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="13.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
