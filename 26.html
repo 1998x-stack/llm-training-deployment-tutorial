@@ -6,10 +6,10 @@
     <title>第26章 端侧部署与边缘推理</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第26章 端侧部署与边缘推理</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第26章 端侧部署与边缘推理</h1>
 
         <p>大家好，我是你们的讲师。前面几章我们把推理引擎和服务架构讲得差不多了——vLLM、TensorRT-LLM、SGLang这些框架，默认都是在数据中心的高性能GPU上运行的。但这一章，我们要聊一个完全不同的场景：把大模型塞进手机、塞进笔记本、塞进IoT设备。你可能会觉得这有点疯狂——一个70B的模型光参数就要140GB显存，怎么塞进一台8GB内存的手机？但现实是，<strong>端侧大模型的时代已经来了</strong>。</p>
 
         <p>2025到2026年，Apple Intelligence、高通AI Engine、联发科APU的密集发布，标志着端侧AI从"能跑"进入了"好用"的阶段。llama.cpp项目在GitHub上收获了超过80K stars，每天有成千上万的开发者在自己的笔记本上跑本地大模型。这一章我们就来拆解端侧部署的完整技术栈：从llama.cpp的架构设计，到量化策略的选择，再到主流框架的横评。最后还会聊一个很多人忽视的话题——<strong>端侧能不能做微调？</strong></p>
 
-        <h3>26.1 端侧大模型的时代——为什么需要端侧部署？</h3>
+        <h2>26.1 端侧大模型的时代——为什么需要端侧部署？</h2>
 
         <p>先问一个根本问题：云端的模型已经那么强了，为什么非要把模型塞到本地？我总结出三个核心驱动力。</p>
 
@@ -59,6 +59,7 @@
 
         <p><strong>离线场景。</strong>飞机上、偏远地区、弱网环境——这些场景下云端API不可用。一个边防检查站的AI辅助系统，不可能依赖卫星网络去调用远在几千公里外的云端API。端侧模型虽然在能力上比云端弱一些，但"能用"远比"不能用但更强"好。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>维度</th>
@@ -96,12 +97,13 @@
                 <td>需要OTA推送模型更新</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>关键判断</strong>：端侧和云端不是替代关系，而是互补关系。一个成熟的AI产品应该采用"云端+端侧"混合架构——简单、隐私敏感的任务在端侧完成，复杂、需要强大推理能力的任务fallback到云端。Apple Intelligence的策略就是典型：本地跑一个3B模型处理日常请求，遇到复杂问题自动调用云端GPT-4。</p>
         </div>
 
-        <h3>26.2 llama.cpp架构解析</h3>
+        <h2>26.2 llama.cpp架构解析</h2>
 
         <p>说到端侧推理，llama.cpp是绕不开的存在。这个由ggerganov发起的开源项目，彻底改变了"在本地CPU上跑大模型"这件事的可能性。让我深入拆解它的几个核心技术点。</p>
 
@@ -111,7 +113,7 @@
 
         <p><strong>内存映射加载。</strong>这是llama.cpp性能的关键。传统方式加载模型需要先把文件读入内存缓冲区，再解析到模型结构中。mmap方式直接把文件映射到进程的虚拟地址空间，操作系统按需从磁盘加载数据。这不仅大幅减少了内存使用，还让模型加载时间从秒级降到了毫秒级——第一次推理时可能略有IO延迟，但后续推理完全不需要重复加载。</p>
 
-        <pre><code># 使用llama.cpp运行本地模型的典型流程
+        <pre style="overflow-x:auto"><code># 使用llama.cpp运行本地模型的典型流程
 
 # 1. 下载GGUF格式模型文件
 # 以Llama-3.2-3B-Instruct为例（Q4_K_M量化）
@@ -141,7 +143,7 @@ cmake --build build --config Release -j
             <p><strong>性能数据</strong>：在Apple M4 Max芯片上，llama.cpp运行Llama-3.2-3B-Instruct（Q4_K_M）可以达到约80 tokens/s的推理速度，远超人类阅读速度。在骁龙8 Gen 3手机上，同样模型约为15-25 tokens/s，虽不如笔记本但也达到了可用水平。关键经验——<strong>推理速度的上限通常不在计算而在内存带宽</strong>，因为自回归解码的瓶颈是读取参数权重的速度。</p>
         </div>
 
-        <h3>26.3 端侧量化策略</h3>
+        <h2>26.3 端侧量化策略</h2>
 
         <p>端侧部署的核心挑战是"把大象装进冰箱"——一个FP16的7B模型需要14GB显存，而手机的可用内存通常只有6-8GB，还要同时运行操作系统和其他App。量化是唯一的出路。但端侧量化和服务器端量化的思路不太一样，我展开说说。</p>
 
@@ -151,6 +153,83 @@ cmake --build build --config Release -j
 
         <p><strong>Per-layer自适应量化。</strong>2025-2026年的最新进展是对每一层独立评估量化损失，然后为每层选择最优的量化配置。这种方法比全局统一量化好得多——有些层可以用INT4而不损失精度，有些层必须用INT8。llama.cpp的IQ系列（Importance-aware Quantization）和AutoGPTQ的量化策略都采用了自适应方法。</p>
 
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="量化后模型体积公式">
+            <math display="block" aria-label="Size in bytes approx equals P times b over 8">
+                <mrow>
+                    <mi>S</mi><mo>≈</mo><mi>P</mi><mo>×</mo>
+                    <mfrac><mi>b</mi><mn>8</mn></mfrac>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 26-1　量化后权重体积：P 为参数量，b 为平均位宽（bit）。例：7B（P=7×10⁹）在 b=16 时约 14 GB，b=4 时约 3.5 GB，即位宽减半、体积减半（教学示意，未计入量化元数据与对齐开销）。</span>
+        </div>
+
+        <div class="widget" id="size-widget">
+            <p><strong>模型体积速算</strong>　按公式 26-1 估算量化后权重体积（不含 KV Cache 与量化元数据）。</p>
+            <label for="size-params">参数量 P（十亿）：<output id="size-params-out">7</output> B</label>
+            <input id="size-params" type="range" min="1" max="70" step="1" value="7" aria-label="参数量十亿">
+            <label for="size-bits">平均位宽 b（bit）：<output id="size-bits-out">4</output></label>
+            <input id="size-bits" type="range" min="2" max="16" step="1" value="4" aria-label="平均位宽">
+            <button type="button" id="size-preset">对照 FP16（P=7、b=16）</button>
+            <p class="readout" id="size-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var P = 7, b = 4;
+            var out = document.getElementById('size-out');
+            var pOut = document.getElementById('size-params-out'), bOut = document.getElementById('size-bits-out');
+            function render() {
+                var gb = P * 1e9 * (b / 8) / 1e9;
+                out.textContent = '估算体积 ≈ ' + gb.toFixed(2) + ' GB（P=' + P + 'B，b=' + b
+                    + ' bit）；相对 FP16（' + (P * 2).toFixed(0) + ' GB）压缩约 '
+                    + (16 / b).toFixed(1) + ' 倍（教学示意）。';
+                pOut.textContent = P;
+                bOut.textContent = b;
+            }
+            document.getElementById('size-params').addEventListener('input', function (e) { P = +e.target.value; render(); });
+            document.getElementById('size-bits').addEventListener('input', function (e) { b = +e.target.value; render(); });
+            document.getElementById('size-preset').addEventListener('click', function () {
+                document.getElementById('size-bits').value = 16;
+                b = 16; render();
+            });
+            render();
+        })();
+        </script>
+
+        <figure>
+            <svg viewBox="0 0 720 280" role="img" aria-labelledby="fig26-1-title fig26-1-desc">
+                <title id="fig26-1-title">按层敏感度的混合精度位宽分配</title>
+                <desc id="fig26-1-desc">embedding 与 attention 对量化敏感用更高位宽，FFN 层不敏感用更低 INT4，各按重要性分配 bit，使平均位宽下降而精度损失可控。</desc>
+                <line x1="70" y1="230" x2="690" y2="230" stroke="#cbd5e1" stroke-width="1.5"></line>
+                <text x="16" y="52" font-size="11" fill="#64748b">位宽</text>
+                <text x="24" y="70" font-size="11" fill="#94a3b8">16</text>
+                <text x="24" y="126" font-size="11" fill="#94a3b8">8</text>
+                <text x="24" y="182" font-size="11" fill="#94a3b8">4</text>
+                <text x="24" y="238" font-size="11" fill="#94a3b8">0</text>
+                <rect x="90" y="62" width="70" height="168" rx="6" fill="#dbeafe" stroke="#3b82f6"></rect>
+                <text x="125" y="150" text-anchor="middle" font-size="12" fill="#1e3a8a" transform="rotate(-90 125 150)">Embedding</text>
+                <text x="125" y="252" text-anchor="middle" font-size="11" fill="#334155">INT8/FP16</text>
+                <text x="125" y="268" text-anchor="middle" font-size="10" fill="#94a3b8">极敏感</text>
+                <rect x="210" y="62" width="70" height="168" rx="6" fill="#dbeafe" stroke="#3b82f6"></rect>
+                <text x="245" y="150" text-anchor="middle" font-size="12" fill="#1e3a8a" transform="rotate(-90 245 150)">Attention</text>
+                <text x="245" y="252" text-anchor="middle" font-size="11" fill="#334155">INT8</text>
+                <text x="245" y="268" text-anchor="middle" font-size="10" fill="#94a3b8">敏感</text>
+                <rect x="330" y="146" width="70" height="84" rx="6" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="365" y="195" text-anchor="middle" font-size="12" fill="#166534" transform="rotate(-90 365 195)">FFN</text>
+                <text x="365" y="252" text-anchor="middle" font-size="11" fill="#334155">INT4</text>
+                <text x="365" y="268" text-anchor="middle" font-size="10" fill="#94a3b8">不敏感</text>
+                <rect x="450" y="146" width="70" height="84" rx="6" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="485" y="195" text-anchor="middle" font-size="12" fill="#166534" transform="rotate(-90 485 195)">FFN 深</text>
+                <text x="485" y="252" text-anchor="middle" font-size="11" fill="#334155">INT4</text>
+                <text x="485" y="268" text-anchor="middle" font-size="10" fill="#94a3b8">不敏感</text>
+                <rect x="570" y="62" width="70" height="168" rx="6" fill="#fef3c7" stroke="#f59e0b"></rect>
+                <text x="605" y="150" text-anchor="middle" font-size="12" fill="#92400e" transform="rotate(-90 605 150)">LM Head</text>
+                <text x="605" y="252" text-anchor="middle" font-size="11" fill="#334155">INT8</text>
+                <text x="605" y="268" text-anchor="middle" font-size="10" fill="#94a3b8">敏感</text>
+            </svg>
+            <figcaption>图 26-1　混合精度量化的位宽分配：embedding 与 LM Head 对量化最敏感，通常保留 INT8/FP16；attention 次之；FFN（前馈）层不敏感，可压到 INT4。按重要性分配 bit 后，平均位宽低于统一量化而精度损失可控。依据 llama.cpp K-quant/IQ 系列的分组量化思路（ggml 文档）；各层位宽为示意。</figcaption>
+        </figure>
+
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>量化类型</th>
@@ -202,8 +281,9 @@ cmake --build build --config Release -j
                 <td>严重</td>
             </tr>
         </table>
+        </div>
 
-        <h3>26.4 主流端侧框架对比</h3>
+        <h2>26.4 主流端侧框架对比</h2>
 
         <p>llama.cpp虽然是最知名的端侧推理框架，但绝不是唯一的。2026年的端侧推理生态已经非常丰富，每个框架都有自己的定位和优势。</p>
 
@@ -221,7 +301,7 @@ cmake --build build --config Release -j
             <p><strong>踩坑故事</strong>：去年我给一个车载语音助手项目做端侧部署评估。团队一开始选了MLC-LLM，因为它声称在GPU上性能最优。结果在NVIDIA Orin（车载计算平台）上跑了一个月，发现MLC-LLM的Vulkan后端遇到了驱动兼容性问题，频繁crash。切换到llama.cpp的CUDA后端后稳定运行，虽然推理速度慢了约8%，但零crash。教训是——<strong>在端侧部署中，稳定性往往比极致性能更重要</strong>。车载设备不像数据中心可以随时重启，一个crash可能影响驾驶安全。选框架时不仅要看benchmark数据，还要评估目标硬件上的长期稳定性。</p>
         </div>
 
-        <h3>26.5 端侧微调——MobileFineTuner与TrainDeeploy</h3>
+        <h2>26.5 端侧微调——MobileFineTuner与TrainDeeploy</h2>
 
         <p>你可能以为端侧只能跑推理，训练必须在数据中心。但2025-2026年出现了一个新趋势——<strong>端侧微调</strong>。让模型在用户设备上做小规模的个性化适配，不把用户数据上传到云端。</p>
 
@@ -237,12 +317,20 @@ cmake --build build --config Release -j
 
         <p>好了，第二十六章的内容就到这里。这一章我们从端侧部署的驱动力出发，深入拆解了llama.cpp的GGUF格式、Metal/CUDA/Vulkan多后端和mmap内存映射技术，比较了INT4量化到per-layer自适应量化的端侧量化策略，横评了llama.cpp、MLC-LLM、MNN、ExecuTorch、MediaPipe五大框架的优劣，最后展望了端侧微调这个新兴方向。下一章<strong>第27章「集群运维与故障恢复」</strong>我们要从设备端回到数据中心——当你在数千张GPU上训练模型时，如何保证训练不出岔子？集群挂了怎么办？咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>ggerganov/llama.cpp 与 ggml — <a href="https://github.com/ggerganov/llama.cpp">github.com/ggerganov/llama.cpp</a>（26.2 节 GGUF / 多后端 / mmap）。</li>
+            <li>Dettmers et al., <em>QLoRA: Efficient Finetuning of Quantized LLMs</em>, 2023 — <a href="https://arxiv.org/abs/2305.14314">arXiv:2305.14314</a>（26.3 / 26.5 节 4-bit 量化与 QLoRA 微调）。</li>
+            <li>MLC-LLM — <a href="https://github.com/mlc-ai/mlc-llm">github.com/mlc-ai/mlc-llm</a>（26.4 节 TVM 端侧编译）。</li>
+            <li>Gemma Team, <em>Gemma: Open Models Based on Gemini Research and Technology</em>, 2024 — <a href="https://arxiv.org/abs/2403.08295">arXiv:2403.08295</a>（26.4 节 MediaPipe/Gemma 端侧模型）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="25.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="27.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
