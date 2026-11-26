@@ -6,10 +6,10 @@
     <title>第28章 从零到一：完整实战项目</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,54 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html" class="active">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第28章 从零到一：完整实战项目</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第28章 从零到一：完整实战项目</h1>
 
         <p>大家好，我是你们的讲师。欢迎来到这门课的最后一章。整整27章的技术讲解过后，终于到了"把知识变成代码"的时候了。这一章我们要做一个完整的端到端实战项目：<strong>从零开始预训练一个1B参数的 decoder-only 语言模型，完成SFT和DPO后训练，最后量化部署上线</strong>。</p>
 
         <p>选择1B规模而不是更大的参数，基于两个考虑：第一，1B模型在单机多卡（4-8张GPU）上就能跑起来，不需要千卡集群，读者更容易复现。第二，1B模型的全流程训练是理解更大模型训练的"最小完备集"——预训练、SFT、DPO、量化、部署，每个环节在大模型上遇到的问题在1B模型上都会原样出现，只是规模小一些。走通这个小模型的全流程，你就获得了驾驭大规模训练的核心心智模型。</p>
 
-        <h3>28.1 项目规划——选型、预算与时间线</h3>
+        <figure>
+            <svg viewBox="0 0 720 250" role="img" aria-labelledby="fig28-1-title fig28-1-desc">
+                <title id="fig28-1-title">1B 模型从零到一的端到端管道</title>
+                <desc id="fig28-1-desc">从数据准备开始，依次经过预训练、SFT、DPO、评估、INT4 量化，最后用 vLLM 部署为 API 服务的完整流程。</desc>
+                <defs>
+                    <marker id="fig28-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+                    </marker>
+                </defs>
+                <rect x="16" y="52" width="96" height="60" rx="10" fill="#eff6ff" stroke="#3b82f6"></rect>
+                <text x="64" y="80" text-anchor="middle" font-size="12" fill="#1e3a8a">数据准备</text>
+                <text x="64" y="98" text-anchor="middle" font-size="10" fill="#64748b">100B tokens</text>
+                <line x1="112" y1="82" x2="128" y2="82" stroke="#64748b" stroke-width="2" marker-end="url(#fig28-1-arrow)"></line>
+                <rect x="130" y="52" width="96" height="60" rx="10" fill="#dbeafe" stroke="#3b82f6"></rect>
+                <text x="178" y="80" text-anchor="middle" font-size="12" fill="#1e3a8a">预训练</text>
+                <text x="178" y="98" text-anchor="middle" font-size="10" fill="#64748b">1B 基座模型</text>
+                <line x1="226" y1="82" x2="242" y2="82" stroke="#64748b" stroke-width="2" marker-end="url(#fig28-1-arrow)"></line>
+                <rect x="244" y="52" width="96" height="60" rx="10" fill="#ede9fe" stroke="#8b5cf6"></rect>
+                <text x="292" y="80" text-anchor="middle" font-size="12" fill="#4c1d95">SFT</text>
+                <text x="292" y="98" text-anchor="middle" font-size="10" fill="#64748b">50K 指令</text>
+                <line x1="340" y1="82" x2="356" y2="82" stroke="#64748b" stroke-width="2" marker-end="url(#fig28-1-arrow)"></line>
+                <rect x="358" y="52" width="96" height="60" rx="10" fill="#ede9fe" stroke="#8b5cf6"></rect>
+                <text x="406" y="80" text-anchor="middle" font-size="12" fill="#4c1d95">DPO</text>
+                <text x="406" y="98" text-anchor="middle" font-size="10" fill="#64748b">20K 偏好对</text>
+                <line x1="454" y1="82" x2="470" y2="82" stroke="#64748b" stroke-width="2" marker-end="url(#fig28-1-arrow)"></line>
+                <rect x="472" y="52" width="96" height="60" rx="10" fill="#fef3c7" stroke="#f59e0b"></rect>
+                <text x="520" y="80" text-anchor="middle" font-size="12" fill="#92400e">评估</text>
+                <text x="520" y="98" text-anchor="middle" font-size="10" fill="#64748b">MMLU/HumanEval</text>
+                <line x1="568" y1="82" x2="584" y2="82" stroke="#64748b" stroke-width="2" marker-end="url(#fig28-1-arrow)"></line>
+                <rect x="586" y="52" width="118" height="60" rx="10" fill="#dcfce7" stroke="#22c55e"></rect>
+                <text x="645" y="80" text-anchor="middle" font-size="12" fill="#166534">INT4 量化</text>
+                <text x="645" y="98" text-anchor="middle" font-size="10" fill="#64748b">GPTQ · vLLM</text>
+                <text x="16" y="160" font-size="11" fill="#475569">先跑一个 mini 版全链路验证 pipeline，再上全量数据训练。</text>
+                <text x="16" y="184" font-size="11" fill="#475569">每阶段保存 checkpoint 并在固定 benchmark 上评估，分数下降则回退并调低学习率。</text>
+                <text x="16" y="214" font-size="11" fill="#94a3b8">各阶段数据量与超参为教学示意，具体数值以工程实验为准。</text>
+            </svg>
+            <figcaption>图 28-1　1B 模型从零到一的端到端管道：数据准备 → 预训练 → SFT → DPO → 评估 → INT4 量化 → vLLM 部署。每阶段产出 checkpoint 并在固定 benchmark 上评估，保证训练朝正确方向推进；建议先跑 mini 版全链路再上全量。流程为本项目教学示例，各阶段规模为示意。</figcaption>
+        </figure>
+
+        <h2>28.1 项目规划——选型、预算与时间线</h2>
 
         <p>任何训练项目的第一步都不是写代码，而是做规划。一个清晰的项目规划就像建筑蓝图——它决定了后续所有工作的方向和边界。</p>
 
@@ -57,8 +96,59 @@
 
         <p><strong>算力预算。</strong>我们规划用8张A100 80GB GPU（或等价的H100），训练约100B tokens的数据。在BF16混合精度下，1B模型的训练吞吐量约为每GPU每秒15,000 tokens（以A100计）。8张GPU的峰值吞吐量为120K tokens/s。100B tokens的预训练大约需要100B / 120K / 3600 ≈ 231小时 ≈ 9.6天。加上SFT（约1天）和DPO（约1.5天），总训练时间约12天。以云上A100约$2/GPU-hour计算，总成本约8×2×24×12 ≈ $4,600。如果使用spot实例，可以降到$1,500左右。</p>
 
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="预训练时间与算力成本公式">
+            <math display="block" aria-label="T train equals N tokens over R times G times 3600">
+                <mrow>
+                    <msub><mi>T</mi><mtext>train</mtext></msub><mo>=</mo>
+                    <mfrac><msub><mi>N</mi><mtext>tokens</mtext></msub><mrow><mi>R</mi><mo>·</mo><mi>G</mi><mo>·</mo><mn>3600</mn></mrow></mfrac>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 28-1　预训练时间（小时）：N_tokens 为训练 token 数，R 为单卡每秒吞吐，G 为卡数，3600 秒/小时。总成本 ≈ T_train × G × 单卡时价。本页以 N=100B、R=15,000、G=8 为例得 ≈ 231 小时（教学示意）。</span>
+        </div>
+
+        <div class="widget" id="plan-widget">
+            <p><strong>预训练时间与成本速算</strong>　按公式 28-1 估算训练时长与算力成本。</p>
+            <label for="plan-n">训练 token 数（十亿）：<output id="plan-n-out">100</output></label>
+            <input id="plan-n" type="range" min="1" max="300" step="5" value="100" aria-label="训练token数十亿">
+            <label for="plan-g">GPU 卡数：<output id="plan-g-out">8</output></label>
+            <input id="plan-g" type="range" min="1" max="64" step="1" value="8" aria-label="GPU卡数">
+            <label for="plan-r">单卡吞吐 R（token/s）：<output id="plan-r-out">15000</output></label>
+            <input id="plan-r" type="range" min="1000" max="30000" step="1000" value="15000" aria-label="单卡吞吐">
+            <label for="plan-price">单卡时价（美元）：<output id="plan-price-out">2</output></label>
+            <input id="plan-price" type="range" min="0.5" max="6" step="0.5" value="2" aria-label="单卡时价">
+            <button type="button" id="plan-preset">Spot 对照（R=15000、$1/卡）</button>
+            <p class="readout" id="plan-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var N = 100, G = 8, R = 15000, price = 2;
+            var out = document.getElementById('plan-out');
+            var els = {n:document.getElementById('plan-n'), g:document.getElementById('plan-g'), r:document.getElementById('plan-r'), price:document.getElementById('plan-price')};
+            function render() {
+                var hours = N * 1e9 / (R * G * 3600);
+                var days = hours / 24;
+                var cost = hours * G * price;
+                out.textContent = '预计训练 ≈ ' + hours.toFixed(0) + ' 小时（' + days.toFixed(1) + ' 天）；'
+                    + '算力成本 ≈ $' + cost.toFixed(0) + '（教学示意，不含存储/网络）。';
+                document.getElementById('plan-n-out').textContent = N;
+                document.getElementById('plan-g-out').textContent = G;
+                document.getElementById('plan-r-out').textContent = R;
+                document.getElementById('plan-price-out').textContent = price.toFixed(1);
+            }
+            els.n.addEventListener('input', function (e) { N = +e.target.value; render(); });
+            els.g.addEventListener('input', function (e) { G = +e.target.value; render(); });
+            els.r.addEventListener('input', function (e) { R = +e.target.value; render(); });
+            els.price.addEventListener('input', function (e) { price = +e.target.value; render(); });
+            document.getElementById('plan-preset').addEventListener('click', function () {
+                price = 1; els.price.value = 1; render();
+            });
+            render();
+        })();
+        </script>
+
         <p><strong>时间规划。</strong></p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>阶段</th>
@@ -96,12 +186,13 @@
                 <td>INT4量化、vLLM部署、API测试</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>核心建议</strong>：在正式开始之前，先用一个小规模实验验证整个pipeline。拿1B tokens的数据跑一个mini预训练（只需几小时），然后走完整SFT+DPO+量化流程。这样能在投入全量资源之前发现pipeline中的bug——数据格式问题、模型维度配置错误、推理代码不兼容等。我见过太多团队直接上全量训练，结果跑了三天后发现loss不对，回头排查是数据预处理代码里把label和input搞反了。<strong>先跑通一个mini version，再上全量——这个习惯价值百万美元</strong>。</p>
         </div>
 
-        <h3>28.2 数据准备——小规模但高质量的训练语料库</h3>
+        <h2>28.2 数据准备——小规模但高质量的训练语料库</h2>
 
         <p>我们的目标不是打造一个"通用大模型"——那是巨头和开源社区的事情。我们的目标是打造一个"在小规模高质量数据上训练出的、具有清晰语言理解和指令遵循能力的模型"。因此数据质量远重要于数据数量。</p>
 
@@ -111,7 +202,7 @@
 
         <p><strong>Tokenization。</strong>我们使用与LLaMA兼容的tokenizer——基于SentencePiece的BPE tokenizer，vocab size=32K，byte-fallback enabled。关键是在训练语料上训练tokenizer，而不是直接使用现成的——因为我们的数据分布（中英文混合+代码）可能与通用tokenizer的训练分布不同。训练tokenizer需要约1-5GB的采样数据，通常耗时几小时。</p>
 
-        <pre><code># 数据预处理pipeline（伪代码架构）
+        <pre style="overflow-x:auto"><code># 数据预处理pipeline（伪代码架构）
 class DataPreprocessingPipeline:
     def __init__(self, tokenizer_path):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
@@ -145,7 +236,7 @@ class DataPreprocessingPipeline:
         tokenized = self.tokenize(filtered)          # Token化
         return tokenized</code></pre>
 
-        <h3>28.3 预训练实战——FSDP、DeepSpeed与训练监控</h3>
+        <h2>28.3 预训练实战——FSDP、DeepSpeed与训练监控</h2>
 
         <p>预训练是整条链路中最长、最贵、最容易出问题的环节。我们选择FSDP（Fully Sharded Data Parallelism）作为分布式训练策略——它对代码侵入性最小，与原生PyTorch兼容最好，适合1B级别的模型。</p>
 
@@ -159,7 +250,7 @@ class DataPreprocessingPipeline:
             <p><strong>踩坑故事</strong>：我第一次跑1B模型预训练时遇到过一个令人崩溃的问题——loss在前5000步正常下降，但到8000步时突然飙升到12.0，然后跳回正常，再过2000步又飙升一次。排查了整整三天，检查了数据、优化器、分布式配置，一无所获。最后用tcpdump抓包分析通信，发现是NCCL的all-reduce操作在某个特定step出现了数据损坏——两个rank之间偶尔会出现重复的梯度包。根因是交换机的ECMP（Equal-Cost Multipath）哈希导致部分UDP包被路由器分片和重排序。解决方法是启用NCCL的NVLink优先路由策略，或者改用TCP over InfiniBand（如果硬件支持）。这个bug在1000次训练中大约出现3次，极难复现，<strong>但一旦遇到就会浪费数十小时的训练量</strong>。这次经历让我深刻理解了为什么大型训练集群需要专用的高性能网络——共享的以太网基础设施真的不适合万卡级别的训练。</p>
         </div>
 
-        <h3>28.4 后训练管道——SFT + DPO的完整流程</h3>
+        <h2>28.4 后训练管道——SFT + DPO的完整流程</h2>
 
         <p>预训练完成后，我们得到了一个base model。它的语言能力已经很强了，但它还不会"对话"——你问它一个问题，它可能会继续写一段相关文本而非回答你的问题。后训练的目的就是教会它"好好回答问题"。</p>
 
@@ -169,7 +260,7 @@ class DataPreprocessingPipeline:
 
         <p><strong>评估Checkpoint。</strong>每个checkpoint都必须在固定benchmark上评估，才能判断训练是否向正确方向进行。我们在每个SFT和DPO checkpoint上评估以下指标：MMLU（多任务知识理解），我们期望1B模型达到约35-40%（随机基线25%）；HumanEval（代码生成），期望pass@1约15-20%；自建的instruction-following benchmark（50条指令，GPT-4打分），期望score > 7/10。如果某个checkpoint的benchmark分数出现下降，说明可能出现了灾难性遗忘或过度优化——需要回退到上一个好checkpoint并降低学习率。</p>
 
-        <pre><code># DPO训练的核心逻辑（简化版）
+        <pre style="overflow-x:auto"><code># DPO训练的核心逻辑（简化版）
 def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta=0.1):
     """
     policy_logps: 当前策略模型输出的log probabilities
@@ -188,7 +279,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta=0.1):
     loss = -F.logsigmoid(logits).mean()
     return loss</code></pre>
 
-        <h3>28.5 量化部署——从训练权重到生产服务</h3>
+        <h2>28.5 量化部署——从训练权重到生产服务</h2>
 
         <p>模型训练完毕，现在是时候把它部署到生产环境了。对于1B模型，我们可以直接部署FP16版本（约2GB显存），但为了更好的性价比和边缘部署兼容性，我们选择量化到INT4。</p>
 
@@ -196,7 +287,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta=0.1):
 
         <p><strong>vLLM部署。</strong>使用vLLM作为推理服务引擎，它提供了PagedAttention、continuous batching、prefix caching等优化。配置：max_model_len=4096，gpu_memory_utilization=0.9，max_num_batched_tokens=8192。部署后通过OpenAI兼容的API提供服务。实测在单张A100上，INT4量化的1B模型可以达到约2,000 tokens/s的吞吐量（batch size=32，输入128 tokens，输出128 tokens）。对于一个小型应用（日均10万次推理请求），单张GPU就能轻松应对。</p>
 
-        <pre><code># 使用vLLM部署量化模型的完整脚本
+        <pre style="overflow-x:auto"><code># 使用vLLM部署量化模型的完整脚本
 from vllm import LLM, SamplingParams
 from vllm.model_executor.models import ModelRegistry
 
@@ -238,7 +329,7 @@ for output in outputs:
             <p><strong>部署经验</strong>：你可能注意到我们直接用vLLM加载GPTQ模型。这是2025-2026年的标准做法——vLLM原生支持GPTQ、AWQ和SqueezeLLM量化格式，不需要额外的转换步骤。如果你在实际项目中需要更高的吞吐量，可以考虑以下优化：使用tensor parallelism跨多卡推理（1B模型一般不需要）、启用prefix caching（如果前缀重复率高）、使用spectral offloading（将不常用的expert offload到CPU）。对于1B模型，单卡的吞吐量通常已经足够了。</p>
         </div>
 
-        <h3>28.6 踩坑总结与未来展望</h3>
+        <h2>28.6 踩坑总结与未来展望</h2>
 
         <p>走完整整28章的技术内容，我想用这个实战项目的踩坑总结作为课程的收尾。以下是我遇到过的最值得分享的教训。</p>
 
@@ -256,7 +347,7 @@ for output in outputs:
             <p><strong>老师的话</strong>：到此为止，28章的内容全部结束了。感谢你一路坚持到这里。写这门课的过程中，我回想起自己从2019年开始接触Transformer到今天的整个学习曲线——走过太多弯路，踩过太多坑。这门课的价值不在于它讲了多深的技术细节，而在于它把那些"需要花几年时间踩坑才能获得的经验"浓缩了出来，让你站在前人的肩膀上少走弯路。记住：<strong>大模型训练不是一个"跑通就行"的事情，而是一个"系统性的工程实践"</strong>——数据、算法、工程、运维，每个环节都不可或缺。如果你完整跟完了这门课，你已经有能力从零开始构建和部署自己的语言模型了。去创造吧，AI的未来值得期待。</p>
         </div>
 
-        <pre><code># 28章课程回顾：从零到一的完整技术栈
+        <pre style="overflow-x:auto"><code># 28章课程回顾：从零到一的完整技术栈
 #
 # Parts overview:
 # Part 1 (Ch01-04):   Fundamentals —— 全景图、数据、Tokenizer、Transformer
@@ -268,12 +359,21 @@ for output in outputs:
 #
 # 祝你训练顺利，模型收敛！🚀</code></pre>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Touvron et al., <em>LLaMA: Open and Efficient Foundation Language Models</em>, 2023 — <a href="https://arxiv.org/abs/2302.13971">arXiv:2302.13971</a>（28.1 节 1B LLaMA-style 架构选型）。</li>
+            <li>Zhao et al., <em>PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel</em>, 2023 — <a href="https://arxiv.org/abs/2304.11277">arXiv:2304.11277</a>（28.3 节 FSDP）。</li>
+            <li>Rafailov et al., <em>Direct Preference Optimization</em>, 2023 — <a href="https://arxiv.org/abs/2305.18290">arXiv:2305.18290</a>（28.4 节 DPO）。</li>
+            <li>Frantar et al., <em>GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers</em>, 2022 — <a href="https://arxiv.org/abs/2210.17323">arXiv:2210.17323</a>（28.5 节 INT4 量化）。</li>
+            <li>Penedo et al., <em>The FineWeb Datasets</em>, 2024 — <a href="https://arxiv.org/abs/2406.17557">arXiv:2406.17557</a>（28.2 节开源预训练语料）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="27.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
-            <a href="javascript:void(0)">下一章 →</a>
+            <a href="index.html">🏁 课程完成</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
