@@ -6,10 +6,10 @@
     <title>第27章 集群运维与故障恢复</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html" class="active">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第27章 集群运维与故障恢复</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第27章 集群运维与故障恢复</h1>
 
         <p>大家好，我是你们的讲师。前面25章我们把训练和部署的技术细节讲了个遍，但有一个话题一直被刻意回避——<strong>训练跑了三周后集群挂了怎么办？</strong>这不是假设性问题，而是大规模训练中的日常。训练一个千亿参数级别的模型通常需要数千张GPU连续运行数周到数月，这么长的时间窗口内，硬件故障、网络波动、软件崩溃几乎是必然事件。</p>
 
         <p>我见过最惨烈的一次：某团队用2048张A100训练一个MoE模型，跑了18天后因为机柜制冷故障导致温度过高，20张GPU同时掉卡。由于他们的checkpoint策略是每6小时保存一次，最后一次保存是4小时前——4小时的训练量，数千美元的电费和GPU租赁费，付之东流。更痛苦的是，重启后还要花半天时间做一致性校验。<strong>这就是本章要解决的问题——如何让训练在故障面前"摔不疼"。</strong></p>
 
-        <h3>27.1 分布式Checkpoint——异步、分片与一致性保证</h3>
+        <h2>27.1 分布式Checkpoint——异步、分片与一致性保证</h2>
 
         <p>Checkpoint是大规模训练的"保命符"。但很多人对checkpoint的理解还停留在"训练完保存一下模型权重"——在大规模分布式场景中，远没有那么简单。</p>
 
@@ -59,7 +59,7 @@
 
         <p><strong>Checkpoint一致性保证。</strong>分布式训练中，不同rank的权重更新不是严格同步的——尤其是在使用异步数据并行或pipeline parallelism时。如果rank之间保存的checkpoint时间点不一致，加载后模型会产生数值不一致或训练损失异常。解决方案是引入"barrier synchronization"：在所有rank都到达同一个global step后，统一触发checkpoint保存。PyTorch的torch.distributed.checkpoint和DeepSpeed的checkpointing机制都实现了这个保证。</p>
 
-        <pre><code># 使用PyTorch Distributed Checkpoint的异步保存示例
+        <pre style="overflow-x:auto"><code># 使用PyTorch Distributed Checkpoint的异步保存示例
 import torch
 import torch.distributed.checkpoint as dcp
 from torch.distributed.checkpoint.stateful import Stateful
@@ -98,7 +98,39 @@ train_step()</code></pre>
             <p><strong>工程经验</strong>：checkpoint保存频率需要仔细权衡。每1小时保存一次：最多丢失1小时训练量，但磁盘IO压力大。每24小时保存一次：磁盘压力小，但故障时最多丢失24小时的工作。我推荐的做法是——<strong>每2小时保存一次完整checkpoint，每10分钟保存一次optimizer-only的lightweight checkpoint</strong>。恢复时先加载最近的lightweight checkpoint（只有optimizer状态和step计数），然后从上一个完整checkpoint加载权重。这样丢失的训练不超过10分钟，而磁盘IO基本不发愁。</p>
         </div>
 
-        <h3>27.2 故障检测与自动恢复</h3>
+        <div class="widget" id="ckpt-widget">
+            <p><strong>Checkpoint 间隔与预期丢失</strong>　按公式 27-1 估算：给定保存间隔与均每日故障次数，估算每天因回滚而丢失的训练小时数。</p>
+            <label for="ckpt-int">保存间隔 T_ckpt（小时）：<output id="ckpt-int-out">2</output></label>
+            <input id="ckpt-int" type="range" min="0.5" max="24" step="0.5" value="2" aria-label="保存间隔小时">
+            <label for="ckpt-mtbf">每日故障次数：<output id="ckpt-mtbf-out">1</output></label>
+            <input id="ckpt-mtbf" type="range" min="0" max="10" step="1" value="1" aria-label="每日故障次数">
+            <button type="button" id="ckpt-preset">对照方案（T_ckpt=6、故障 2 次/天）</button>
+            <p class="readout" id="ckpt-out" aria-live="polite"></p>
+        </div>
+        <script>
+        (function () {
+            var T = 2, f = 1;
+            var out = document.getElementById('ckpt-out');
+            var tOut = document.getElementById('ckpt-int-out'), fOut = document.getElementById('ckpt-mtbf-out');
+            function render() {
+                var lost = (T / 2) * f;
+                out.textContent = '预期每天丢失 ≈ ' + lost.toFixed(2) + ' 小时（T_ckpt/2 × 故障次数）；'
+                    + '若故障 0 次则不丢失，但间隔越大单次故障代价越大（教学示意）。';
+                tOut.textContent = T;
+                fOut.textContent = f;
+            }
+            document.getElementById('ckpt-int').addEventListener('input', function (e) { T = +e.target.value; render(); });
+            document.getElementById('ckpt-mtbf').addEventListener('input', function (e) { f = +e.target.value; render(); });
+            document.getElementById('ckpt-preset').addEventListener('click', function () {
+                T = 6; f = 2;
+                document.getElementById('ckpt-int').value = 6;
+                document.getElementById('ckpt-mtbf').value = 2; render();
+            });
+            render();
+        })();
+        </script>
+
+        <h2>27.2 故障检测与自动恢复</h2>
 
         <p>在大规模集群上，故障不是"会不会发生"的问题，而是"什么时候发生"的问题。我们需要一个系统化的故障检测和自动恢复机制。</p>
 
@@ -106,6 +138,48 @@ train_step()</code></pre>
 
         <p><strong>GPU故障类型。</strong>GPU故障有几种常见模式，每种需要不同的处理方式。ECC Error（Error Correcting Code错误）是最常见的——GPU显存中出现了比特翻转，可能是宇宙射线或硬件老化导致。轻微的ECC error可以被硬件自动纠正（Single-bit ECC），但如果出现Multi-bit ECC error或者ECC error频率过高，说明GPU硬件已经不稳定，需要下线替换。另一个常见故障是"掉卡"——GPU从PCIe总线上消失，nvidia-smi都检测不到。这通常是电源问题或GPU physical damage导致，唯一处理方式是硬重启甚至替换硬件。网络故障则表现为通信超时或all-reduce操作hang住——典型的症状是心跳还在发，但NCCL操作已经卡死。</p>
 
+        <div class="eq" data-math-scroll tabindex="0" role="region" style="overflow-x:auto" aria-label="单次故障平均丢失训练量公式">
+            <math display="block" aria-label="E lost equals T ckpt over 2">
+                <mrow>
+                    <mi>E</mi><mo>[</mo><msub><mi>L</mi><mtext>lost</mtext></msub><mo>]</mo><mo>≈</mo>
+                    <mfrac><msub><mi>T</mi><mtext>ckpt</mtext></msub><mn>2</mn></mfrac>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 27-1　若故障在 checkpoint 周期内均匀发生，平均丢失训练量约为间隔 T_ckpt 的一半（教学示意，假设故障与保存时刻不相关）。间隔越短丢失越少，但磁盘 IO 与存储开销越高。</span>
+        </div>
+
+        <figure>
+            <svg viewBox="0 0 720 300" role="img" aria-labelledby="fig27-1-title fig27-1-desc">
+                <title id="fig27-1-title">故障恢复时间线：回滚丢失窗口与非阻塞追赶</title>
+                <desc id="fig27-1-desc">训练按固定周期保存 checkpoint，故障发生在两次保存之间，回滚到上次 checkpoint 后丢失一段训练量；非阻塞 catch-up 让健康节点继续前进，恢复节点重放梯度更新追赶。</desc>
+                <line x1="40" y1="90" x2="690" y2="90" stroke="#94a3b8" stroke-width="2"></line>
+                <text x="40" y="76" font-size="11" fill="#64748b">训练步 →</text>
+                <line x1="150" y1="60" x2="150" y2="120" stroke="#7c3aed" stroke-width="2"></line>
+                <text x="150" y="52" text-anchor="middle" font-size="11" fill="#6d28d9">ckpt</text>
+                <line x1="330" y1="60" x2="330" y2="120" stroke="#7c3aed" stroke-width="2"></line>
+                <text x="330" y="52" text-anchor="middle" font-size="11" fill="#6d28d9">ckpt</text>
+                <line x1="510" y1="60" x2="510" y2="120" stroke="#7c3aed" stroke-width="2"></line>
+                <text x="510" y="52" text-anchor="middle" font-size="11" fill="#6d28d9">ckpt</text>
+                <line x1="440" y1="40" x2="440" y2="130" stroke="#ef4444" stroke-width="2" stroke-dasharray="5 3"></line>
+                <text x="440" y="32" text-anchor="middle" font-size="11" fill="#b91c1c">故障</text>
+                <rect x="330" y="86" width="110" height="8" fill="#fee2e2"></rect>
+                <text x="385" y="150" text-anchor="middle" font-size="11" fill="#b91c1c">丢失窗口 ≈ T_ckpt/2</text>
+                <line x1="510" y1="196" x2="690" y2="196" stroke="#22c55e" stroke-width="2" marker-end="url(#fig27-1-arrow)"></line>
+                <defs>
+                    <marker id="fig27-1-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#64748b"></path>
+                    </marker>
+                </defs>
+                <text x="40" y="176" font-size="12" font-weight="600" fill="#7c3aed">回滚 + 恢复</text>
+                <text x="40" y="200" font-size="11" fill="#475569">回退到上一个 ckpt，重算丢失的 step</text>
+                <text x="40" y="234" font-size="12" font-weight="600" fill="#15803d">非阻塞 catch-up</text>
+                <text x="40" y="258" font-size="11" fill="#475569">健康节点不停车继续前进，恢复节点重放梯度更新追赶</text>
+                <text x="40" y="288" font-size="11" fill="#94a3b8">缩短 T_ckpt 降低丢失，异步/分片保存降低保存代价（示意）。</text>
+            </svg>
+            <figcaption>图 27-1　故障恢复时间线：checkpoint 按周期保存，故障落在两次保存之间时回滚到上一个 checkpoint，平均丢失约半个周期（公式 27-1）；非阻塞 catch-up 让健康节点不因单个慢节点停车，恢复节点通过重放梯度更新追赶。示意基于大模型分布式 checkpoint 与弹性训练的常见工程做法；T_ckpt 与丢失窗口为示意。</figcaption>
+        </figure>
+
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>故障类型</th>
@@ -150,8 +224,9 @@ train_step()</code></pre>
                 <td>切换存储路径，修复/替换磁盘</td>
             </tr>
         </table>
+        </div>
 
-        <h3>27.3 容错训练机制——FT-HSDP、非阻塞Catch-up与弹性训练</h3>
+        <h2>27.3 容错训练机制——FT-HSDP、非阻塞Catch-up与弹性训练</h3>
 
         <p>检测到故障后，关键问题是<strong>如何以最小的代价恢复训练</strong>。2025-2026年，这个领域出现了几项突破性技术。</p>
 
@@ -165,7 +240,7 @@ train_step()</code></pre>
             <p><strong>踩坑故事</strong>：我有一个朋友（真的是朋友不是我自己）在一家AI Infra公司带队做万卡集群的容错方案。他们信心满满地上线了自研的弹性训练系统，结果第一次大规模测试就出事了——一个节点故障后弹性系统自动缩减worker数，但optimizer的learning rate scheduler没有感知到worker数变化，仍然按照原来的batch size调整lr。结果lr变得过大，模型在恢复后的第一步loss直接爆到NaN。那次故障导致他们花了三天时间排查，最终发现是代码里把lr scheduler的step count和dataloader的batch count硬耦合了。教训是——<strong>弹性训练不仅仅是"增减worker"，它连锁影响lr schedule、batch normalization、数据shuffle等一整套机制</strong>。做弹性训练，必须建立完整的"元状态管理"机制，确保所有stateful组件都能感知到集群规模的变化。</p>
         </div>
 
-        <h3>27.4 训练监控体系</h3>
+        <h2>27.4 训练监控体系</h2>
 
         <p>一个好的监控体系能让你在故障发生前就发现问题，而不是等故障发生了才去救火。我总结一个"四层监控"框架。</p>
 
@@ -177,7 +252,7 @@ train_step()</code></pre>
 
         <p><strong>第四层：集群级健康仪表盘。</strong>综合以上所有指标，建设一个统一的训练监控dashboard。业界最佳实践是使用Prometheus + Grafana + 自研exporter的组合。每个worker定期上报指标（GPU温度、显存使用量、吞吐量、通信延迟等），Prometheus聚合后通过Grafana展示。当综合健康度低于阈值时自动发送告警（到Slack、钉钉或电话）。Meta的FBLearner和Google的Brain training monitor是这类系统的标杆，但中小团队用开源方案也能达到90%的效果。</p>
 
-        <pre><code># 简易训练监控指标上报（Python伪代码）
+        <pre style="overflow-x:auto"><code># 简易训练监控指标上报（Python伪代码）
 import time
 import psutil
 from prometheus_client import start_http_server, Gauge
@@ -204,7 +279,7 @@ def monitor_loop():
 start_http_server(8000)
 monitor_loop()</code></pre>
 
-        <h3>27.5 成本管理——Spot实例与Checkpoint策略</h3>
+        <h2>27.5 成本管理——Spot实例与Checkpoint策略</h2>
 
         <p>在云上训练大规模模型，GPU租赁费通常占总成本的80%以上。聪明的成本管理能帮你省下30-50%的费用。</p>
 
@@ -220,12 +295,20 @@ monitor_loop()</code></pre>
 
         <p>好了，第二十七章的内容就到这里。这一章我们从分布式checkpoint的异步、分片和一致性保证讲起，深入分析了节点故障、GPU故障、网络故障的检测和恢复机制，介绍了FT-HSDP、非阻塞catch-up、弹性训练等前沿容错训练技术，搭建了"四层监控"的完整训练监控体系，最后分享了spot实例管理、checkpoint策略优化和资源调度的成本控制方法。下一章<strong>第28章「从零到一：完整实战项目」</strong>是这门课的收官之作——我们把前27章学到的所有知识用到一个完整的端到端实战项目中，从预训练到微调到量化部署，走通全链路。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>PyTorch, <em>Distributed Checkpoint (torch.distributed.checkpoint)</em> 文档 — <a href="https://pytorch.org/docs/stable/distributed.checkpoint.html">PyTorch 官方文档</a>（27.1 节异步 / 分片 checkpoint）。</li>
+            <li>PyTorch, <em>torch.distributed.elastic</em> 文档 — <a href="https://pytorch.org/docs/stable/distributed.elastic.html">PyTorch 官方文档</a>（27.3 节弹性训练）。</li>
+            <li>Zhang et al., <em>OPT: Open Pre-trained Transformer Language Models</em>, 2022 — <a href="https://arxiv.org/abs/2205.01068">arXiv:2205.01068</a>（27.5 节大规模训练与资源调度实践）。</li>
+            <li>Rajbhandari et al., <em>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</em>, 2019 — <a href="https://arxiv.org/abs/1910.02054">arXiv:1910.02054</a>（27.5 节 optimizer state 占比估算）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="26.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="28.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
