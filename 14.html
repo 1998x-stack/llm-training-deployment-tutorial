@@ -6,10 +6,10 @@
     <title>第14章 Mid-training与继续预训练</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,9 +41,9 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第14章 Mid-training与继续预训练</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第14章 Mid-training与继续预训练</h1>
 
         <p>大家好，我是你们的讲师。想象这样一个场景：你是一家医疗AI公司的技术负责人，公司拿到了一个经过通用预训练的LLaMA-3基座模型。你们的目标是让它变成"世界上最懂医学"的模型——能够看懂病历、理解临床试验报告、辅助诊断。你应该怎么做？</p>
 
@@ -51,9 +51,40 @@
 
         <p>我见过一个金融领域的团队，花了一个月收集了200万条金融问答数据做SFT，结果模型在金融领域的专业评测上只提升了3%。后来他们改成先用5000亿金融语料做CPT，再用那200万条SFT数据做微调，同样的评测上提升了22%。<strong>CPT的ROI远远高于SFT</strong>——当你需要注入大量新知识时，不要跳过这一步。</p>
 
-        <h3>14.1 Mid-training的定位</h3>
+        <h2>14.1 Mid-training的定位</h2>
 
         <p>为了更好地理解Mid-training在训练链路中扮演的角色，我们把它放到训练的完整流程中来看：</p>
+
+        <figure>
+            <svg viewBox="0 0 720 220" role="img" aria-labelledby="fig14-1-title fig14-1-desc">
+                <title id="fig14-1-title">Mid-training 在三阶段训练链路中的定位</title>
+                <desc id="fig14-1-desc">训练依次经过通用预训练、Mid-training/领域继续预训练、SFT 与偏好对齐三个阶段。前两者往参数里“写知识”，SFT 阶段则教会模型怎么“用知识”。Mid-training 位于中间，负责注入领域知识。</desc>
+                <defs><marker id="f14-arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 z" fill="#64748b"></path></marker></defs>
+                <g font-size="13" text-anchor="middle">
+                    <rect x="20" y="50" width="190" height="96" rx="10" fill="#e2e8f0" stroke="#94a3b8"></rect>
+                    <text x="115" y="78" font-weight="600" fill="#334155">① 通用预训练</text>
+                    <text x="115" y="102" fill="#475569" font-size="12">数万亿 token 互联网数据</text>
+                    <text x="115" y="126" fill="#64748b" font-size="12">产出：通才（语言+常识）</text>
+
+                    <rect x="265" y="44" width="190" height="108" rx="10" fill="#c7d2fe" stroke="#6366f1" stroke-width="2"></rect>
+                    <text x="360" y="74" font-weight="600" fill="#312e81">② Mid-training / CPT</text>
+                    <text x="360" y="98" fill="#3730a3" font-size="12">百亿~千亿领域 token</text>
+                    <text x="360" y="122" fill="#4338ca" font-size="12">产出：专才（领域知识）</text>
+
+                    <rect x="510" y="50" width="190" height="96" rx="10" fill="#dcfce7" stroke="#16a34a"></rect>
+                    <text x="605" y="78" font-weight="600" fill="#166534">③ SFT + 偏好对齐</text>
+                    <text x="605" y="102" fill="#166534" font-size="12">数万~百万条指令数据</text>
+                    <text x="605" y="126" fill="#15803d" font-size="12">产出：助手（会用知识）</text>
+
+                    <line x1="210" y1="98" x2="261" y2="98" stroke="#64748b" stroke-width="2" marker-end="url(#f14-arrow)"></line>
+                    <line x1="455" y1="98" x2="506" y2="98" stroke="#64748b" stroke-width="2" marker-end="url(#f14-arrow)"></line>
+                    <text x="115" y="180" fill="#4338ca" font-size="12">← 往参数里“写知识”</text>
+                    <text x="360" y="180" fill="#4338ca" font-size="12">知识注入的关键阶段</text>
+                    <text x="605" y="180" fill="#15803d" font-size="12">行为对齐（不注入新知识）→</text>
+                </g>
+            </svg>
+            <figcaption>图 14-1　Mid-training 处于通用预训练与 SFT 之间：前两个阶段把领域知识写进参数，SFT 与偏好对齐则教会模型怎样使用已有知识。当领域知识本身缺失时，只做 SFT 无法补上，必须先做 CPT。数据量级为通用经验区间（教学示意）。</figcaption>
+        </figure>
 
         <p><strong>Step 1: 通用预训练（General Pre-training）。</strong>在海量互联网数据上训base model。目标是让模型掌握语言能力、常识知识和基础推理。这一阶段的产出是"通才"——什么都懂一些，但什么都不专精。</p>
 
@@ -67,7 +98,7 @@
             <p><strong>一个形象的类比</strong>：通用预训练相当于"读万卷书"——建立完整的知识框架。SFT相当于"练习怎么考"——学会回答问题。CPT相当于"补充阅读"——在某个领域上比别人多读几百本书。CPT之后再做SFT，就好比先学透了知识再刷题，效果自然好。反之，如果知识本身就不具备，再怎么刷题（做SFT）也考不了高分。</p>
         </div>
 
-        <h3>14.2 继续预训练(CPT)策略</h3>
+        <h2>14.2 继续预训练(CPT)策略</h2>
 
         <p>CPT不是简单地"在领域数据上多训一会儿"。它有几个关键的策略参数需要精心设计。</p>
 
@@ -77,6 +108,7 @@
 
         <p><strong>训练步数规划。</strong>CPT的步数取决于你要注入的数据量和学习率。一个经验法则是：<strong>CPT的token数不应该超过通用预训练token数的10%</strong>。比如通用预训练用了3T token，CPT用100-300B token就够了。更多的CPT未必更好——边际收益递减，且遗忘风险增加。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>参数</th>
@@ -121,8 +153,9 @@
                 <td>过拟合、对齐税</td>
             </tr>
         </table>
+        </div>
 
-        <pre><code># CPT训练配置示例
+        <pre style="overflow-x:auto"><code># CPT训练配置示例
 
 cpt_config = {
     # 数据
@@ -150,7 +183,7 @@ cpt_config = {
     # 每个检查点都评测领域和通用任务，检测遗忘
 }</code></pre>
 
-        <h3>14.3 灾难性遗忘</h3>
+        <h2>14.3 灾难性遗忘</h2>
 
         <p>灾难性遗忘（Catastrophic Forgetting）是CPT最棘手的挑战。模型在通用预训练中学到的知识，在做领域CPT过程中可能被"覆盖"——神经网络参数在梯度更新中逐渐偏向新的数据分布，旧知识被"挤"出去了。</p>
 
@@ -160,7 +193,26 @@ cpt_config = {
 
         <p><strong>Replay（经验回放）。</strong>最简单的方案——在CPT数据中混入一定比例的通用预训练数据。这个"通用数据"可以是从原始预训练数据中随机采样的子集，也可以是一个经过挑选的"核心知识集"（包含模型应该保留的关键能力对应的训练数据）。前面提到的10-30%的通用数据混合就是一种replay策略。</p>
 
-        <p><strong>EWC（Elastic Weight Consolidation）。</strong>这是一类参数级的方法。在CPT的loss上加一个正则项，惩罚参数偏离它们的原始值太多。对于每个参数，EWC会计算一个"重要性权重"——模型在通用任务上对这个参数有多依赖。重要参数被改变时会受到更大惩罚，不重要参数可以自由变化。EWC的优点是保留通用知识的效果很好，缺点是实现复杂度高、计算开销大（需要计算Fisher信息矩阵）。</p>
+        <p><strong>EWC（Elastic Weight Consolidation）。</strong>这是一类参数级的方法。在CPT的loss上加一个正则项，惩罚参数偏离它们的原始值太多。对于每个参数，EWC会计算一个“重要性权重”——模型在通用任务上对这个参数有多依赖。重要参数被改变时会受到更大惩罚，不重要参数可以自由变化。EWC的优点是保留通用知识的效果很好，缺点是实现复杂度高、计算开销大（需要计算Fisher信息矩阵）。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="EWC 正则化损失公式">
+            <math display="block" aria-label="L of theta equals L new of theta plus lambda over 2 times sum over i of F sub i times open paren theta sub i minus theta star sub i close paren squared">
+                <mrow>
+                    <mi>L</mi><mo>(</mo><mi>θ</mi><mo>)</mo>
+                    <mo>=</mo>
+                    <msub><mi>L</mi><mi>new</mi></msub><mo>(</mo><mi>θ</mi><mo>)</mo>
+                    <mo>+</mo>
+                    <mfrac><mi>λ</mi><mn>2</mn></mfrac>
+                    <munder><mo>∑</mo><mi>i</mi></munder>
+                    <msub><mi>F</mi><mi>i</mi></msub>
+                    <msup>
+                        <mrow><mo>(</mo><msub><mi>θ</mi><mi>i</mi></msub><mo>−</mo><msubsup><mi>θ</mi><mi>i</mi><mo>*</mo></msubsup><mo>)</mo></mrow>
+                        <mn>2</mn>
+                    </msup>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 14-1　EWC：λ 控制惩罚强度，Fᵢ 为参数重要性（Fisher 信息），θ*ᵢ 为通用预训练后的参数（Kirkpatrick 等，2017）</span>
+        </div>
 
         <p><strong>LoRA-MoE混合方案。</strong>这是2025-2026年出现的较新方法。在CPT时，不在原始参数上直接做梯度更新，而是训练一组额外的LoRA（Low-Rank Adaptation）适配器——每个领域一个LoRA模块。推理时，通过一个小的路由器来选择应该使用哪个LoRA。这样原始参数完全不受影响，遗忘问题被彻底绕过了。代价是推理时需要额外加载LoRA参数，且路由决策增加了推理复杂度。</p>
 
@@ -168,7 +220,7 @@ cpt_config = {
             <p><strong>实战建议</strong>：对于大多数场景，replay策略（CPT数据中混10-30%通用数据）就足够了——它简单、有效、没有额外开销。如果replay还不够（你的领域和通用任务差异非常大），再考虑EWC。LoRA-MoE更适合需要对同一个基座模型做多个领域CPT的场景（比如一个基座又做法律、又做医疗、又做金融），每个领域训练独立的LoRA，推理时动态选。</p>
         </div>
 
-        <h3>14.4 实践案例：法律/医疗/金融CPT</h3>
+        <h2>14.4 实践案例：法律/医疗/金融CPT</h2>
 
         <p>理论讲完了，我们来看看几个真实的CPT实践案例。这些数据来自公开的论文和技术报告，有些来自我个人的经验。</p>
 
@@ -178,6 +230,7 @@ cpt_config = {
 
         <p><strong>金融领域CPT。</strong>金融数据的特点是：时间序列性、数值敏感、需要理解财务报表和经济学概念。一个金融CPT项目公开了他们遇到的特殊问题——<strong>日期泄露</strong>。他们使用的金融新闻数据中大部分是2024年的，导致模型在涉及"current year"的推理时总是输出"2024"。解决方案：在数据预处理阶段做日期归一化（把绝对日期转换为相对日期），然后在CPT中掺入少量不同时间段的金融数据。CPT后，模型在金融NLP benchmark（FinBench）上提升了25%。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>领域</th>
@@ -216,12 +269,13 @@ cpt_config = {
                 <td>-0.8%</td>
             </tr>
         </table>
+        </div>
 
         <div class="warning">
             <p><strong>踩坑案例</strong>：某法律AI团队做了一个CPT实验，数据量200B token，全是法律文本，没有混合任何通用数据。结果30B token之后（约15%进度），模型在通用对话能力上已经严重退化——你问它"什么是苹果"，它开始回答"根据《中华人民共和国苹果国家标准》……"。更严重的是，他们直到训练结束都没有发现这个问题，因为监控指标只看法律领域的loss。直到用户反馈"模型变傻了"他们才意识到。教训是：<strong>CPT时必须监控通用benchmark</strong>，而且这个监控应该从训练的第一天就开始，不是训练结束后再做。</p>
         </div>
 
-        <h3>14.5 Mid-training vs SFT: 什么时候用哪个？</h3>
+        <h2>14.5 Mid-training vs SFT: 什么时候用哪个？</h2>
 
         <p>这是工程团队中最常被问的问题。我总结了一个非常简单的决策树：</p>
 
@@ -248,7 +302,7 @@ cpt_config = {
             <li>你的场景是一个现成的API已经做得足够好了（比如翻译、摘要）。</li>
         </ul>
 
-        <pre><code># 决策树：Mid-training vs SFT
+        <pre style="overflow-x:auto"><code># 决策树：Mid-training vs SFT
 #
 # Q1: 你的base model在目标领域的close-book评测中表现如何？
 #   ├─ 良好（>80% on domain benchmark）→ Q2
@@ -271,12 +325,19 @@ cpt_config = {
 
         <p>好了，这一章我们深入探讨了Mid-training在整个训练链路中的定位，学到了继续预训练（CPT）的关键策略参数（数据混合比例、学习率调度、训练步数），深入分析了灾难性遗忘的检测和缓解方法，了解了法律/医疗/金融领域的真实CPT案例，并给出了判断"什么时候需要CPT"的决策框架。从下一章开始，我们将进入训练链路的"后训练"阶段——<strong>第15章「监督微调(SFT)原理与实践」</strong>，看看怎么用高质量的指令数据把base model变成真正能用的助手。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Kirkpatrick et al., <em>Overcoming Catastrophic Forgetting in Neural Networks</em>（EWC）, 2017 — <a href="https://arxiv.org/abs/1612.00796">arXiv:1612.00796</a>（14.3 节 EWC 与公式 14-1）。</li>
+            <li>Gururangan et al., <em>Don't Stop Pretraining: Adapt Language Models to Domains and Tasks</em>（DAPT/TAPT）, 2020 — <a href="https://arxiv.org/abs/2004.10964">arXiv:2004.10964</a>（14.2 节继续预训练）。</li>
+            <li>Hu et al., <em>LoRA: Low-Rank Adaptation of Large Language Models</em>, 2021 — <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a>（14.3 节 LoRA-MoE 混合方案）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="13.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="15.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
