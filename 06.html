@@ -234,7 +234,6 @@ def get_lr_scheduler(name, step, warmup_steps, total_steps, max_lr, min_lr=0):
             </math>
             <span class="eq-num">公式 6-2　全局范数裁剪：范数未超阈值时不变，超过时按比例缩放到 max_norm</span>
         </div>
-        </div>
 
         <p><strong>梯度值裁剪（Value Clipping）</strong>是把每个梯度值裁剪到一个区间内（如[-1.0, 1.0]）。这种方法在大模型中较少使用，因为大模型不同层的梯度尺度差异很大，统一的值裁剪对某些层可能过于激进。</p>
 
