@@ -6,10 +6,10 @@
     <title>第22章 模型合并与知识蒸馏</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第22章 模型合并与知识蒸馏</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第22章 模型合并与知识蒸馏</h1>
 
         <p>大家好，我是你们的讲师。想象一下这个场景：你花了几万美元用LoRA做了一个法律领域的微调模型，效果不错。你的同事做了一个代码能力特化的模型，也很强。你们能不能把两个模型合成一个——既懂法律又会写代码？或者另一个场景：你的70B模型精度非常好但推理太慢，能不能把它压缩成一个7B的版本，保留大部分能力？</p>
 
         <p>这两个问题的答案分别是<strong>模型合并（Model Merging）</strong>和<strong>知识蒸馏（Knowledge Distillation）</strong>。它们都是在"不大规模重新训练"的前提下，对已有模型进行能力组合或压缩的核心技术。如果说前面几章讲的是"怎么训练一个好模型"，那么这一章讲的是"怎么利用已有的好模型创造更好的模型"。在实际工程中，这两项技术往往是性价比最高的效率杠杆——用最少的计算成本换取最大的能力提升。</p>
 
-        <h3>22.1 Model Merging方法论</h3>
+        <h2>22.1 Model Merging方法论</h2>
 
         <p>Model Merging的核心思想很直接：<strong>如果你有多个在同一个基座模型上微调得到的模型，它们的权重可以以某种方式"平均"在一起，得到一个同时具备所有能力的合并模型</strong>。这听起来像"把两张照片叠在一起"，但实际操作远没有那么简单——简单地对权重取平均通常会毁掉两个模型（这叫weight interference），因为不同微调任务学到的是不同方向上的参数偏移，直接平均会把两个方向都拉回原点。</p>
 
@@ -59,10 +59,43 @@
 
         <p><strong>TIES Merging（Trim Elect Sign Merge）</strong>是2023年提出的方法，也是目前最主流的方法之一。它分三步走：第一步<strong>trim</strong>——只保留每个模型中变化最显著的那部分参数（去掉噪声级的小变化）；第二步<strong>elect sign</strong>——对每个参数位置，投票选择合并方向（正或负）；第三步<strong>merge</strong>——对达成一致的参数做平均，对分歧的参数做重置（改成基座模型的原始值）。TIES的核心洞察是：<strong>合并冲突（parameter disagreement）是影响合并效果的主要因素</strong>，与其在两个冲突方向之间取一个折中值（这通常啥也不管用），不如不合并这个位置的参数。</p>
 
+        <figure>
+            <svg viewBox="0 0 720 260" role="img" aria-labelledby="fig22-1-title fig22-1-desc">
+                <title id="fig22-1-title">TIES 合并的三步流程</title>
+                <desc id="fig22-1-desc">第一步 Trim：去掉每个模型变化量中噪声级的小值，只保留显著参数；第二步 Elect Sign：对每个参数位置投票决定合并方向；第三步 Merge：方向一致的取平均，方向冲突的重置为基座模型的原始值。</desc>
+                <defs><marker id="f22-arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 z" fill="#64748b"></path></marker></defs>
+                <g font-size="12" text-anchor="middle">
+                    <rect x="20" y="60" width="190" height="128" rx="10" fill="#e2e8f0" stroke="#94a3b8"></rect>
+                    <text x="115" y="86" font-weight="600" fill="#334155">① Trim</text>
+                    <text x="115" y="112" fill="#475569">保留变化显著的参数</text>
+                    <text x="115" y="132" fill="#475569">去掉噪声级的小值</text>
+                    <text x="115" y="162" fill="#64748b">−0.001 → 0</text>
+
+                    <rect x="265" y="60" width="190" height="128" rx="10" fill="#c7d2fe" stroke="#6366f1"></rect>
+                    <text x="360" y="86" font-weight="600" fill="#312e81">② Elect Sign</text>
+                    <text x="360" y="112" fill="#4338ca">每个位置投票定方向</text>
+                    <text x="360" y="132" fill="#4338ca">（正 / 负）</text>
+                    <text x="360" y="162" fill="#4338ca">sign = argmax 票数</text>
+
+                    <rect x="510" y="60" width="190" height="128" rx="10" fill="#dcfce7" stroke="#16a34a"></rect>
+                    <text x="605" y="86" font-weight="600" fill="#166534">③ Merge</text>
+                    <text x="605" y="112" fill="#15803d">方向一致 → 取平均</text>
+                    <text x="605" y="132" fill="#15803d">方向冲突 → 重置为基座值</text>
+                    <text x="605" y="162" fill="#15803d">避免折中噪声</text>
+
+                    <line x1="210" y1="124" x2="261" y2="124" stroke="#64748b" stroke-width="2" marker-end="url(#f22-arrow)"></line>
+                    <line x1="455" y1="124" x2="506" y2="124" stroke="#64748b" stroke-width="2" marker-end="url(#f22-arrow)"></line>
+                    <text x="360" y="222" text-anchor="middle" fill="#334155">关键：对冲突参数“不合并”，比在两个方向上取折中值更有效</text>
+                </g>
+            </svg>
+            <figcaption>图 22-1　TIES 合并的三步：先 Trim 掉噪声级的小变化，再对每个参数位置 Elect Sign 投票方向，最后 Merge——方向一致的平均，方向冲突的重置为基座模型原值。阈值与投票比例为方法示意（教学示意）。</figcaption>
+        </figure>
+
         <p><strong>DARE Merging</strong>是2024年提出的改进方案，它在TIES的基础上增加了一个关键操作：<strong>random drop</strong>。DARE的核心发现是：微调产生的参数变化向量是高度冗余的——随机丢掉90-99%的变化量（drop rate 0.9-0.99），剩下的1-10%经过rescale后就能代表几乎全部微调效果。所以DARE的做法是：先对每个模型的delta参数做随机drop + rescale，然后用TIES的sign voting合并。这个方法的好处是进一步减少了参数冲突，在多个模型的合并中效果尤其突出。</p>
 
         <p><strong>SLERP（Spherical Linear Interpolation）</strong>是另一种思路。它不在参数空间中做线性插值，而是在<strong>球面空间</strong>中做插值。你可以这样理解：线性插值是走直线从A到B，球面插值是沿着球面走最短弧线。SLERP的优势是能更好地保持参数向量的方向信息（方向往往比长度更代表"学到的东西"），特别适合合并两个差异很大的模型。缺点是计算量大，而且一次只能合并两个模型。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>方法</th>
@@ -100,22 +133,44 @@
                 <td>较高</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>重要发现</strong>：模型合并有一个"甜蜜区间"——被合并的模型最好是<strong>同一个基座模型</strong>的微调变体。如果基座模型不同（比如把LLaMA-3微调版和Mistral微调版合并），由于参数空间的对齐性完全不同，几乎所有合并方法都会失败。有一个团队曾经尝试把Qwen-7B-Chat和LLaMA-2-7B-Chat合并，结果模型完全"疯"了——输出的语言混杂、语法破碎。这就像把两把不同钥匙的齿纹叠在一起，得到的不是一把万能钥匙，而是一块废铁。</p>
         </div>
 
-        <h3>22.2 知识蒸馏原理</h3>
+        <h2>22.2 知识蒸馏原理</h2>
 
         <p>如果说模型合并是把多个模型的能力"组合"到一起，那知识蒸馏就是把一个大模型（teacher）的能力"压缩"到一个小模型（student）中。蒸馏的核心洞察是：<strong>teacher模型在输出正确答案的同时，输出的概率分布本身就包含了丰富的"暗知识"</strong>——它在各个候选答案上的概率分布不仅告诉你"答案是什么"，还告诉你"哪些答案比较接近"。</p>
 
-        <p><strong>Logit-level蒸馏</strong>是最经典的方法。student模型的学习目标不仅是"预测正确答案"，还要"匹配teacher模型的输出概率分布"。匹配概率分布用KL散度（Kullback-Leibler Divergence）来衡量。关键的超参数是<strong>温度（Temperature，通常用T表示）</strong>——高温下概率分布被"平滑"了（概率差异变小），student能学到更多teacher的"排序偏好"；低温下概率分布更尖锐，student更专注于学习正确答案。训练时通常先用高温做蒸馏（学teacher的soft target），然后逐渐降低温度做fine-tune（学hard target）。</p>
+        <p><strong>Logit-level蒸馏</strong>是最经典的方法。student模型的学习目标不仅是“预测正确答案”，还要“匹配teacher模型的输出概率分布”。匹配概率分布用KL散度（Kullback-Leibler Divergence）来衡量。关键的超参数是<strong>温度（Temperature，通常用T表示）</strong>——高温下概率分布被“平滑”了（概率差异变小），student能学到更多teacher的“排序偏好”；低温下概率分布更尖锐，student更专注于学习正确答案。训练时通常先用高温做蒸馏（学teacher的soft target），然后逐渐降低温度做fine-tune（学hard target）。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="知识蒸馏损失公式">
+            <math display="block" aria-label="L equals alpha T squared KL of p teacher to the T parallel p student to the T plus open paren 1 minus alpha close paren CE of y p student">
+                <mrow>
+                    <mi>L</mi><mo>=</mo>
+                    <mi>α</mi>
+                    <msup><mi>T</mi><mn>2</mn></msup>
+                    <mi>KL</mi>
+                    <mo>(</mo>
+                    <msubsup><mi>p</mi><mi>t</mi><mi>T</mi></msubsup>
+                    <mo>‖</mo>
+                    <msubsup><mi>p</mi><mi>s</mi><mi>T</mi></msubsup>
+                    <mo>)</mo>
+                    <mo>+</mo>
+                    <mo>(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo>)</mo>
+                    <mi>CE</mi>
+                    <mo>(</mo><mi>y</mi><mo>,</mo><msub><mi>p</mi><mi>s</mi></msub><mo>)</mo>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 22-1　知识蒸馏损失：KL 项学 teacher 的软标签（带 T² 缩放），CE 项学真实标签（Hinton 等，2015）</span>
+        </div>
 
         <p><strong>Feature-level蒸馏</strong>更深入。Student不仅要匹配teacher的输出分布，还要匹配teacher<strong>中间层</strong>的特征表示。做法是在student和teacher的对应层之间加一个"特征对齐loss"（通常用MSE或cosine similarity），迫使student的中间表示也向teacher靠拢。Feature-level蒸馏的效果一般比纯logit-level好，但代价是：(1)需要设计层间对齐策略（哪一层和哪一层对齐）；(2)需要在训练过程中额外计算teacher的中间特征，显存和计算量翻倍。</p>
 
         <p><strong>Token-level蒸馏</strong>是近一年发展起来的新方法。它关注的不再是单个token的概率分布，而是<strong>token序列层面的生成质量</strong>。具体做法是让teacher和student同时生成一段文本，然后用一个判别器（discriminator）来判断哪段是teacher生成的、哪段是student生成的。Student的目标是"骗过判别器"。这种方法在开放式文本生成任务（创意写作、对话生成）上效果特别好，因为这类任务中单个token的概率匹配意义不大——重要的是整体的风格和质量。</p>
 
-        <pre><code># Logit-level蒸馏loss（简化）
+        <pre style="overflow-x:auto"><code># Logit-level蒸馏loss（简化）
 import torch.nn.functional as F
 
 def distillation_loss(student_logits, teacher_logits, labels, T=4.0, alpha=0.5):
@@ -137,7 +192,7 @@ def distillation_loss(student_logits, teacher_logits, labels, T=4.0, alpha=0.5):
     # 组合loss
     return alpha * kl_loss + (1 - alpha) * ce_loss</code></pre>
 
-        <h3>22.3 渐进式蒸馏</h3>
+        <h2>22.3 渐进式蒸馏</h2>
 
         <p>如果teacher和student的规模差距很大（比如70B蒸馏到1.5B），一次性蒸馏的效果通常很差——student根本"消化不了"teacher那么多的知识。渐进式蒸馏（Progressive Distillation）就是为了解决这个问题而设计的。</p>
 
@@ -151,7 +206,7 @@ def distillation_loss(student_logits, teacher_logits, labels, T=4.0, alpha=0.5):
             <p><strong>实践建议</strong>：渐进式蒸馏的每一步之间要留出"评估-反馈"环节。不是每一步蒸馏完就自动进入下一步。正确的流程是：(1)完成Step1蒸馏；(2)在核心评测集上评估；(3)分析student的能力短板是什么；(4)针对性地调整Step2的数据配比。我见过一个团队自动跑完三步蒸馏，最后发现第二步蒸馏时数据配比出错——把推理类数据占比搞得太低了，导致最终的1.5B模型在推理任务上完全失能。如果他们在每步之间做了评估检查，这个问题在第二步就会被发现。</p>
         </div>
 
-        <h3>22.4 合并与蒸馏的实战对比</h3>
+        <h2>22.4 合并与蒸馏的实战对比</h2>
 
         <p>模型合并和知识蒸馏虽然都能"提升模型能力"，但适用的场景完全不同。选错了方法，要么效果不达预期，要么白白浪费计算资源。</p>
 
@@ -159,6 +214,7 @@ def distillation_loss(student_logits, teacher_logits, labels, T=4.0, alpha=0.5):
 
         <p><strong>什么时候用知识蒸馏？</strong>当你需要<strong>精确地压缩模型</strong>或<strong>把能力从大模型迁移到小模型</strong>时，蒸馏是正确选择。典型场景：(1)你想把70B模型压缩到7B，部署到端侧；(2)你想把GPT-4级别的能力迁移到你自己的小模型上；(3)你的模型需要在特定任务上达到极高的精度，不能用合并的"近似组合"来冒险。蒸馏的优势是<strong>可控性强</strong>——你可以精确地选择哪些知识要迁移、迁移到什么程度。但劣势是需要大量高质量训练数据和可观的计算资源——一次好的蒸馏可能需要数百万条数据和数千GPU小时。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>维度</th>
@@ -196,12 +252,13 @@ def distillation_loss(student_logits, teacher_logits, labels, T=4.0, alpha=0.5):
                 <td>压缩效果好，精度损失可控</td>
             </tr>
         </table>
+        </div>
 
         <div class="warning">
             <p><strong>踩坑案例</strong>：一个做AI助手的团队希望兼顾"代码能力"和"对话体验"。他们先训练了两个模型——Code-SFT模型（代码能力强但对话僵硬）和Chat-SFT模型（对话流畅但代码弱）。他们选择用DARE合并两个模型，合并后代码能力确实保留了80%，但对话上出现了一个诡异的现象：模型在闲聊时会突然蹦出代码片段。比如用户说"今天天气真好"，模型答"是的，天气很好，让我们用Python写一个天气API调用的示例代码：import requests..."。原因是合并时参数的sign voting在涉及"对话风格"的维度上发生了奇怪的重叠——"愉快的对话"和"积极提供代码"两个模式在参数空间中被合并到了一起。最后他们不得不转用蒸馏方案：用Chat模型做teacher，用Code模型的输出做辅助数据，重新训练了一个代码能力增强但保持对话风格的新模型。</p>
         </div>
 
-        <h3>22.5 开源社区的合并实践</h3>
+        <h2>22.5 开源社区的合并实践</h2>
 
         <p>模型合并有一个天然适合开源社区的生态——因为Hugging Face上已有成千上万个基于同一基座的微调模型，合并可以让社区"集合众智"创造更强的模型。我们来聊聊最活跃的几个项目和工具。</p>
 
@@ -209,7 +266,7 @@ def distillation_loss(student_logits, teacher_logits, labels, T=4.0, alpha=0.5):
 
         <p><strong>MergeKit</strong>是社区中最流行的模型合并工具，由MergeKit团队开源（现在是Hugging Face的官方推荐工具）。它支持TIES、DARE、SLERP、Linear等多种合并方法，以及<strong>分层合并</strong>（对不同层用不同合并策略）。MergeKit最强大的特性是<strong>YAML配置驱动</strong>——你只需要写一个配置文件描述要合并哪些模型、用什么方法、比例多少，MergeKit自动执行剩下的操作。</p>
 
-        <pre><code># MergeKit YAML配置示例：合并3个模型
+        <pre style="overflow-x:auto"><code># MergeKit YAML配置示例：合并3个模型
 slices:
   - sources:
       - model: NousResearch/Nous-Hermes-2-Yi-34B
@@ -230,6 +287,7 @@ tokenizer_source: model: NousResearch/Nous-Hermes-2-Yi-34B
 
         <p>社区合并实践的重要经验：<strong>不是所有模型都适合合并</strong>。成功的合并案例有两条共性：一是所有模型在同基座上微调（同一基座是前提条件）；二是微调任务之间有"互补关系"而不是"竞争关系"（比如代码+数学互补，但"严格对齐"和"创意写作"可能冲突）。如果你的两个模型在某个能力维度上是冲突的（一个要求严格保守、一个鼓励创造性），合并时大概率会互相拖后腿。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>合并项目</th>
@@ -262,6 +320,7 @@ tokenizer_source: model: NousResearch/Nous-Hermes-2-Yi-34B
                 <td>大量LoRA合并实验</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>社区趋势</strong>：2025-2026年合并社区的注意力正在从"多任务合并"转向"跨语言合并"和"跨能力桥接"。一个有趣的方向是<strong>cross-lingual model merging</strong>——把中文增强版和英文增强版合并，得到一个双语模型，效果往往比单独做多语言SFT还好。另一个值得关注的方向是<strong>merging + distillation联合使用</strong>：先用合并快速组合多个SFT模型的能力，然后把合并后的模型作为teacher做蒸馏。这种"先组合再压缩"的流程在实际工程中效果非常出色。</p>
@@ -269,12 +328,20 @@ tokenizer_source: model: NousResearch/Nous-Hermes-2-Yi-34B
 
         <p>模型合并和知识蒸馏是模型训练的"倍率器"——它们让你不用每次都从零训练就能获得能力更强或体积更小的模型。模型合并适合快速组合已有能力（免费午餐），知识蒸馏适合精确压缩（付出训练成本换效果）。在实际工程中，两者经常配合使用：先用合并做能力组合快速验证方向，再用蒸馏做生产级的模型压缩。下一章我们将进入课程第六部分——部署与工程实践。<strong>第23章「模型量化技术深度」</strong>，从"瘦身"开始——让你理解怎么把模型从FP16压缩到INT4甚至INT2，同时把精度损失控制在最小。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Hinton et al., <em>Distilling the Knowledge in a Neural Network</em>, 2015 — <a href="https://arxiv.org/abs/1503.02531">arXiv:1503.02531</a>（22.2 节知识蒸馏与公式 22-1）。</li>
+            <li>Yadav et al., <em>TIES-Merging: Resolving Interference When Merging Models</em>, 2023 — <a href="https://arxiv.org/abs/2306.01708">arXiv:2306.01708</a>（22.1 节 TIES）。</li>
+            <li>Yu et al., <em>Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch</em>（DARE）, 2023 — <a href="https://arxiv.org/abs/2311.03099">arXiv:2311.03099</a>（22.1 节 DARE）。</li>
+            <li>Godfrey et al., <em>MergeKit: A Toolkit for Merging Large Language Models</em>, 2024 — <a href="https://arxiv.org/abs/2403.13257">arXiv:2403.13257</a>（22.5 节 MergeKit）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="21.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="23.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
