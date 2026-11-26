@@ -6,10 +6,10 @@
     <title>第10章 训练稳定性与收敛</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第10章 训练稳定性与收敛</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第10章 训练稳定性与收敛</h1>
 
         <p>大家好，我是你们的讲师。前面几章我们讲了怎么把模型搭起来、怎么并行训练——仿佛万事俱备，只差"跑起来"了。但真正的噩梦往往从这里开始。你提交了训练任务，GPU风扇呼呼地转，loss曲线在前100步平稳下降，你松一口气，准备喝杯咖啡。回来一看，loss从3.2突然跳到了9.8——毫无征兆。这就是<strong>Loss Spike</strong>，训练工程师的"心电图上那个危险的波峰"。</p>
 
         <p>我从业以来见过最夸张的一次：一个团队训175B模型，跑了整整两周，loss都降到了2.1。然后一个周末回来，发现loss在周六凌晨4点突然飙到12.7，之后再也没有降回来。两周的计算——上千张GPU、数十万美元——就这样打了水漂。后来排查发现，罪魁祸首是某个数据shard里混入了一批编码损坏的二进制文件，模型在这些"数据"上产生了巨大的梯度，把训练好的参数推出正常区域。这一章我们就来系统地讲清楚训练不稳定的原因和应对方法。</p>
 
-        <h3>10.1 训练不稳定的原因</h3>
+        <h2>10.1 训练不稳定的原因</h2>
 
         <p>训练不稳定的根因可以归结为几个大类。理解这些原因是诊断问题的第一步。</p>
 
@@ -61,6 +61,7 @@
 
         <p><strong>初始化问题</strong>——如果权重初始化不当，模型可能在训练初期就不稳定。比如用太小的初始化值，深层梯度消失；用太大的初始化值，浅层梯度爆炸。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>不稳定类型</th>
@@ -99,10 +100,36 @@
                 <td>看expert选择的熵值</td>
             </tr>
         </table>
+        </div>
 
-        <h3>10.2 常见不稳定模式</h3>
+        <h2>10.2 常见不稳定模式</h2>
 
         <p>Loss Spike是训练中最令人心惊胆战的场景。它通常有两种模式：</p>
+
+        <figure>
+            <svg viewBox="0 0 720 320" role="img" aria-labelledby="fig10-1-title fig10-1-desc">
+                <title id="fig10-1-title">两种 Loss Spike 模式</title>
+                <desc id="fig10-1-desc">左图：短暂 spike，loss 突然升高后几十到几百步内回落，影响较小。右图：spike 后永久停在高位不再恢复，需回滚 checkpoint。两图横轴为训练步数，纵轴为 loss（越靠上 loss 越大）。</desc>
+                <g font-size="12">
+                    <text x="195" y="26" text-anchor="middle" font-weight="600" fill="#166534">模式一：短暂 spike 后恢复</text>
+                    <line x1="60" y1="250" x2="330" y2="250" stroke="#94a3b8"></line>
+                    <line x1="60" y1="250" x2="60" y2="60" stroke="#94a3b8"></line>
+                    <line x1="60" y1="150" x2="330" y2="150" stroke="#fee2e2"></line>
+                    <polyline points="60,110 150,130 190,90 210,120 240,140 330,180" fill="none" stroke="#16a34a" stroke-width="3"></polyline>
+                    <text x="345" y="95" fill="#b91c1c">异常 batch</text>
+                    <text x="195" y="300" text-anchor="middle" fill="#475569">概率低，正常数据把参数拉回</text>
+
+                    <text x="540" y="26" text-anchor="middle" font-weight="600" fill="#991b1b">模式二：spike 后不恢复</text>
+                    <line x1="400" y1="250" x2="680" y2="250" stroke="#94a3b8"></line>
+                    <line x1="400" y1="250" x2="400" y2="60" stroke="#94a3b8"></line>
+                    <line x1="400" y1="150" x2="680" y2="150" stroke="#fee2e2"></line>
+                    <polyline points="400,110 500,135 540,80 560,95 680,90" fill="none" stroke="#dc2626" stroke-width="3"></polyline>
+                    <text x="575" y="130" fill="#b91c1c">停在坏区域</text>
+                    <text x="540" y="300" text-anchor="middle" fill="#475569">参数被推出正常区域，需回滚</text>
+                </g>
+            </svg>
+            <figcaption>图 10-1　两种 Loss Spike 模式：左图异常 batch 只造成短暂升高，后续正常数据把参数拉回；右图参数被推到 loss landscape 的坏区域后永久不恢复，只能回滚到 spike 前的 checkpoint 再排查。横轴为训练步数、纵轴为 loss（向上为大），曲线为示意（教学示意）。</figcaption>
+        </figure>
 
         <p><strong>模式一：短暂spike后恢复。</strong>loss突然跳起来，但经过几十到几百步后恢复正常。这种情况通常是遇到了一个异常的batch（比如一段全是乱码的文本），梯度虽然大，但没有把参数推出太远，后续的正常数据把参数"拉"回来了。这种spike相对无害，但如果频繁发生，说明数据质量管控需要加强。</p>
 
@@ -114,7 +141,7 @@
             <p><strong>经验法则</strong>：遇到NaN时，第一个排查方向是"最近改了什么"。如果训练脚本、数据管道或模型代码没变，99%的情况是数据问题。如果刚改了代码，回滚到上次能跑的状态，用二分法定位改动。不要试图在NaN出现时继续训练——"训练过NaN"等于"训练过垃圾"，模型权重会全面损坏。</p>
         </div>
 
-        <h3>10.3 稳定训练技术</h3>
+        <h2>10.3 稳定训练技术</h2>
 
         <p>针对上述问题，业界积累了一套行之有效的稳定训练"工具箱"。</p>
 
@@ -126,7 +153,30 @@
 
         <p><strong>Z-loss正则化</strong>是PaLM引入的另一项技术。在logits输出层加上一项正则项，惩罚logits的范数过大：L_z = β × log(sum(exp(logits)))^2。这个loss项鼓励logits的数值范围不要太大，间接稳定了整个训练的数值分布。β通常取一个很小的值（如1e-2），不会影响主要的训练目标。</p>
 
-        <pre><code># 综合稳定训练配置示例（PyTorch伪代码）
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="Z-loss 正则项公式">
+            <math display="block" aria-label="L sub z equals beta times the square of log sum over i of exp z sub i">
+                <mrow>
+                    <msub><mi>L</mi><mi>z</mi></msub>
+                    <mo>=</mo>
+                    <mi>β</mi>
+                    <mo>·</mo>
+                    <msup>
+                        <mrow>
+                            <mo>(</mo>
+                            <mi>log</mi><mo>⁡</mo>
+                            <munder><mo>∑</mo><mi>i</mi></munder>
+                            <mi>exp</mi><mo>⁡</mo>
+                            <msub><mi>z</mi><mi>i</mi></msub>
+                            <mo>)</mo>
+                        </mrow>
+                        <mn>2</mn>
+                    </msup>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 10-1　Z-loss：惩罚 logits 的 log-partition 过大（Chowdhery 等，2022，PaLM 第 4 节）</span>
+        </div>
+
+        <pre style="overflow-x:auto"><code># 综合稳定训练配置示例（PyTorch伪代码）
 
 # 1. Gradient Clipping
 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -154,7 +204,7 @@ def z_loss(logits, beta=1e-2):
             <p><strong>最佳实践</strong>：如果你从头训练一个新模型，我建议一开始就把QK-LayerNorm和Embedding LayerNorm加上——它们几乎没有计算开销，但对稳定性的提升非常显著。Gradient Clipping必须开（max_norm=1.0是默认推荐值）。Z-loss可以在训练中期观察logits分布后再决定是否添加。</p>
         </div>
 
-        <h3>10.4 初始化策略</h3>
+        <h2>10.4 初始化策略</h2>
 
         <p>好的初始化让训练事半功倍，不好的初始化让模型从一开始就处于"挣扎"状态。</p>
 
@@ -166,6 +216,7 @@ def z_loss(logits, beta=1e-2):
 
         <p><strong>Meta的"μP"（Maximal Update Parameterization）</strong>是2022年提出的一套理论驱动的初始化框架。μP的核心思想是：<strong>不同宽度的模型应该用不同方式参数化</strong>，这样才能让超参数在不同规模的模型之间迁移。具体来说，μP重新设计了学习率缩放规则和初始化规则，使得在小模型上调好的超参数可以直接迁移到大模型。虽然μP的理论门槛高，但Meta已经在内部大规模推广，开源了mup库供社区使用。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>初始化方法</th>
@@ -198,8 +249,9 @@ def z_loss(logits, beta=1e-2):
                 <td>最优但实现复杂</td>
             </tr>
         </table>
+        </div>
 
-        <h3>10.5 监控与排查</h3>
+        <h2>10.5 监控与排查</h2>
 
         <p>大模型训练是一个漫长的过程（可能持续数周到数月），没有有效的监控手段，出了问题只能干瞪眼。下面是我认为<strong>训练时必须监控的核心指标</strong>。</p>
 
@@ -211,7 +263,7 @@ def z_loss(logits, beta=1e-2):
 
         <p><strong>激活值分布和logits分布</strong>的统计信息。每层的激活值mean、std、max、min应该保持稳定。如果某些层的激活值std突然变成0或NaN，那层肯定有问题。Attention logits的数值范围也很重要——如果Attention logits的max超过100（在FP16下），可能产生溢出。</p>
 
-        <pre><code># 训练监控的Python伪代码
+        <pre style="overflow-x:auto"><code># 训练监控的Python伪代码
 # 在每个training step记录以下指标：
 
 monitoring_metrics = {
@@ -239,12 +291,19 @@ monitoring_metrics = {
 
         <p>好了，这一章我们系统地讲解了训练稳定性的方方面面：不稳定原因的诊断、Loss Spike的模式识别、Gradient Clipping等稳定技术、多种初始化策略的选择，以及训练监控指标的搭建。记住：<strong>稳定的训练过程比优秀的模型设计更重要</strong>——一个设计得很好的模型如果训练过程中崩了，等于零。下一章我们将从"怎么稳定训练"进入"怎么规划训练"——<strong>第11章「Scaling Laws与算力规划」</strong>，讨论怎么在有限的算力下做出最优的训练决策。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Chowdhery et al., <em>PaLM: Scaling Language Modeling with Pathways</em>, 2022 — <a href="https://arxiv.org/abs/2204.02311">arXiv:2204.02311</a>（10.3 节 QK-LayerNorm 与 Z-loss）。</li>
+            <li>Yang et al., <em>Tensor Programs V: Tuning Large Neural Networks via Zero-Shot Hyperparameter Transfer</em>（μP）, 2022 — <a href="https://arxiv.org/abs/2203.03466">arXiv:2203.03466</a>（10.4 节 μP 初始化）。</li>
+            <li>DeepSeek-AI, <em>DeepSeek LLM: Scaling Open-Source Language Models with Longtermism</em>, 2024 — <a href="https://arxiv.org/abs/2401.02954">arXiv:2401.02954</a>（10.4 节小初始化实践）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="09.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="11.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
