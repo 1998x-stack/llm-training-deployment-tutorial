@@ -6,10 +6,10 @@
     <title>第13章 合成数据与数据配比</title>
     <link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="post">
 <div class="double-border">
 <div class="container">
-    <div class="sidebar">
+    <nav class="sidebar" aria-label="课程目录">
         <h3>🤖 课程目录</h3>
         <ul class="chapter-list">
             <li><a href="01.html">第1章 大模型训练全景图</a></li>
@@ -41,15 +41,15 @@
             <li><a href="27.html">第27章 集群运维与故障恢复</a></li>
             <li><a href="28.html">第28章 从零到一：完整实战项目</a></li>
         </ul>
-    </div>
-    <div class="main-content">
-        <h2>第13章 合成数据与数据配比</h2>
+    </nav>
+    <main class="main-content">
+        <h1>第13章 合成数据与数据配比</h1>
 
         <p>大家好，我是你们的讲师。在2024年的时候，大家对训练数据的认知还停留在"爬取+清洗"的粗放模式——从互联网上搞几十TB的文本，去重、过滤，然后一股脑喂给模型。到了2026年，这个范式已经被彻底颠覆了。<strong>合成数据（Synthetic Data）</strong>和<strong>数据配比（Data Mixing）</strong>已经成为决定模型质量的两大核心变量。DeepSeek的训练报告中毫不避讳地说：他们的合成数据占预训练数据的15%、占SFT数据的60%以上。</p>
 
         <p>但合成数据不是万能的。2024年有一篇引起广泛关注的论文叫《The Curse of Recursion》，后来又有一系列研究揭示了<strong>Model Collapse（模型坍缩）</strong>现象——用模型生成的数据反复训练新模型，新模型的质量会逐代退化。如果你只是用GPT-4的数据训练一个GPT-4水平的模型，你永远得不到GPT-5。这一章我们来系统探讨：合成数据怎么生成、怎么用、怎么防止"坍缩"，以及怎么通过数据配比让各类数据发挥最大价值。</p>
 
-        <h3>13.1 合成数据的价值与风险</h3>
+        <h2>13.1 合成数据的价值与风险</h2>
 
         <p>合成数据为什么这么重要？答案很简单：<strong>高质量的自然数据是有限的</strong>。互联网上虽然有几万亿网页文本，但大部分质量不高（广告、噪音、重复内容、低质翻译）。真正高质量的文本——经过编辑审校的书籍、专业学术论文、严谨的百科类内容——总量可能只有几千亿token。而今天的模型已经在这些数据上"读"了好几遍了。</p>
 
@@ -61,6 +61,7 @@
 
         <p><strong>错误放大。</strong>如果用于生成数据的模型有系统性偏差（比如在某个领域经常犯错），那么合成数据会放大这个偏差——生成的数据中错误的比例比原模型更高。这是因为生成的prompt设计可能恰好暴露了模型的弱点，而后续的筛选流程不一定能完整过滤所有错误。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>维度</th>
@@ -98,8 +99,9 @@
                 <td>有（需严格控制比例）</td>
             </tr>
         </table>
+        </div>
 
-        <h3>13.2 合成数据生成方法</h3>
+        <h2>13.2 合成数据生成方法</h2>
 
         <p>经过过去两年的实践，业界沉淀了几套成熟的合成数据生成方法。我按复杂程度逐一介绍。</p>
 
@@ -111,7 +113,7 @@
 
         <p><strong>LLM-as-Judge筛选</strong>是每一条合成数据生成流程的最后一道关卡。用另一个模型（或者同一个模型但不同的role）来"评价"生成的数据质量——是否符合格式要求、答案是否正确、逻辑是否自洽。只有通过筛选的数据才进入训练集。常用的筛选标准包括：指令-回答的匹配度、答案的事实准确性、回答的全面性等。</p>
 
-        <pre><code># 合成数据Pipeline示例（概念示意）
+        <pre style="overflow-x:auto"><code># 合成数据Pipeline示例（概念示意）
 
 # 步骤1: 种子数据准备
 seed_data = load_seed_examples(domain="math", num_examples=100)
@@ -150,7 +152,7 @@ def filter_quality(candidates):
             <p><strong>实用经验</strong>：合成数据的质量瓶颈往往不在"生成"环节，而在"筛选"环节。花70%的精力在筛选策略上，比花70%的精力在生成prompt上效果好得多。一个好的LLM-as-Judge应该使用chain-of-thought评分，让模型先分析再打分——这种方式的评分一致性远高于直接打分。</p>
         </div>
 
-        <h3>13.3 数据课程学习(Curriculum Learning)</h3>
+        <h2>13.3 数据课程学习(Curriculum Learning)</h2>
 
         <p>数据课程学习的核心思想是：<strong>不要把所有数据一股脑喂给模型</strong>，而是按照从易到难的顺序喂，让模型像学生一样"循序渐进"地学习。</p>
 
@@ -166,9 +168,29 @@ def filter_quality(candidates):
 
         <p>但课程学习也有坑：如果某个领域的"简单"数据和"困难"数据的分布差异过大，模型可能在切换阶段时出现loss spike。解决方法是在阶段切换处做<strong>渐进混合</strong>——在过渡区间内（比如500-1000步），简单数据的比例从90%线性下降到10%，同时困难数据的比例从10%上升到90%。</p>
 
-        <h3>13.4 数据配比优化</h3>
+        <h2>13.4 数据配比优化</h2>
 
-        <p>数据配比（Data Mixing）回答的问题是：当你有来自不同领域、不同来源的数据时，<strong>每种数据应该占多少比例？</strong>这个问题远比看起来复杂——因为它涉及"边际收益"的概念：增加1%的代码数据带来的收益和增加1%的数学数据带来的收益不同，而且这些收益是非线性的。</p>
+        <p>数据配比（Data Mixing）回答的问题是：当你有来自不同领域、不同来源的数据时，<strong>每种数据应该占多少比例？</strong>这个问题远比看起来复杂——因为它涉及“边际收益”的概念：增加1%的代码数据带来的收益和增加1%的数学数据带来的收益不同，而且这些收益是非线性的。</p>
+
+        <div class="eq" data-math-scroll tabindex="0" role="region" aria-label="多领域加权训练损失公式">
+            <math display="block" aria-label="L of theta equals sum over i of w sub i times L sub i of theta, subject to sum of w sub i equals 1">
+                <mrow>
+                    <mi>L</mi><mo>(</mo><mi>θ</mi><mo>)</mo>
+                    <mo>=</mo>
+                    <munder><mo>∑</mo><mi>i</mi></munder>
+                    <msub><mi>w</mi><mi>i</mi></msub>
+                    <msub><mi>L</mi><mi>i</mi></msub>
+                    <mo>(</mo><mi>θ</mi><mo>)</mo>
+                    <mo>,</mo>
+                    <mspace width="0.5em"></mspace>
+                    <munder><mo>∑</mo><mi>i</mi></munder>
+                    <msub><mi>w</mi><mi>i</mi></msub>
+                    <mo>=</mo>
+                    <mn>1</mn>
+                </mrow>
+            </math>
+            <span class="eq-num">公式 13-1　多领域数据配比：总损失是各领域损失的加权和，权重 wᵢ 之和为 1（DoReMi 设定，Xie 等，2023）</span>
+        </div>
 
         <p><strong>DoReMi（Domain Re-weighting and Minimization，2023）</strong>是数据配比的奠基性工作。核心思路是：训练一个proximal模型（小模型或只训少量步数的模型），用不同领域配比做实验，观察哪个领域的loss下降最快——loss下降越快的领域，说明当前配比下这个领域的数据"欠训练"了，需要增加它的比例。DoReMi通过一个称为"group DRO"的优化算法，自动找到一个最优配比，让所有领域的loss均衡下降。</p>
 
@@ -184,6 +206,7 @@ def filter_quality(candidates):
 
         <p>4. 在大模型（70B+）上启动正式训练，并在训练过程中动态调整配比。</p>
 
+        <div style="overflow-x:auto">
         <table>
             <tr>
                 <th>方法</th>
@@ -221,12 +244,13 @@ def filter_quality(candidates):
                 <td>全阶段</td>
             </tr>
         </table>
+        </div>
 
         <div class="highlight">
             <p><strong>关键结论</strong>：根据多个团队的公开经验，一个简单有效的"默认配比"是：代码15-20%、数学10-15%、百科25-30%、学术论文10-15%、新闻/对话15-20%、其他5-10%。但这不是金科玉律——如果你的目标是特定领域（比如法律），代码比例可以大幅降低，法律文本的比例可以提升至40%以上。配比的核心原则是：<strong>让你的应用领域数据有足够的占比，同时不让模型丧失通用能力</strong>。</p>
         </div>
 
-        <h3>13.5 2026年合成数据的工业实践</h3>
+        <h2>13.5 2026年合成数据的工业实践</h2>
 
         <p>截至2026年中，合成数据已经深度渗透到训练链路的每一个环节。下面是一些公开可查的行业实践。</p>
 
@@ -240,7 +264,43 @@ def filter_quality(candidates):
             <p><strong>踩坑案例</strong>：2025年有个知名案例——某团队在训练一个代码模型时，使用了大量由GPT-4生成的"代码解释"数据。模型在代码生成benchmark上表现优异，但实际使用中发现模型<strong>生成的代码注释比代码本身还长</strong>——大量输出变成了"解释代码"的模式，而不是直接输出代码。原因是合成数据中存在系统性偏差：GPT-4倾向于在代码答案中附带详细解释，模型学到了这个模式。教训是：<strong>合成数据中的隐式偏差比显式错误更难发现和纠正</strong>——必须要做"数据分布分析"，对比合成数据和真实数据中不同特征的分布差异。</p>
         </div>
 
-        <p>最后，我想分享一个关于合成数据配比的实用框架。我们团队在训练实践中总结了一套"三明治配比法"：</p>
+        <p>最后，我想分享一个关于合成数据配比的实用框架。我们团队在训练实践中总结了一套“三明治配比法”：</p>
+
+        <figure>
+            <svg viewBox="0 0 720 340" role="img" aria-labelledby="fig13-1-title fig13-1-desc">
+                <title id="fig13-1-title">三明治配比法：训练各阶段自然/合成数据比例</title>
+                <desc id="fig13-1-desc">三个阶段：前 60% 步数自然数据占 80%、合成数据占 20%；中间 20% 步数两者各占 50%；最后 20% 步数合成数据占 70%、自然数据占 30%。用自然数据打底、合成数据收尾。</desc>
+                <g font-size="12">
+                    <text x="360" y="26" text-anchor="middle" font-weight="600" fill="#334155">训练阶段（横轴为训练进度）</text>
+                    <rect x="440" y="36" width="14" height="10" fill="#16a34a"></rect><text x="458" y="45" fill="#166534">自然数据</text>
+                    <rect x="540" y="36" width="14" height="10" fill="#6366f1"></rect><text x="558" y="45" fill="#3730a3">合成数据</text>
+                    <g text-anchor="middle">
+                        <text x="160" y="72" fill="#334155">前 60% 步数</text>
+                        <rect x="100" y="134" width="120" height="136" fill="#86efac" stroke="#16a34a"></rect>
+                        <rect x="100" y="100" width="120" height="34" fill="#c7d2fe" stroke="#6366f1"></rect>
+                        <text x="160" y="210" fill="#166534">80%</text>
+                        <text x="160" y="124" fill="#3730a3">20%</text>
+                        <text x="160" y="300" fill="#475569">自然为主，打下语言/知识基础</text>
+
+                        <text x="360" y="72" fill="#334155">中间 20% 步数</text>
+                        <rect x="300" y="185" width="120" height="85" fill="#86efac" stroke="#16a34a"></rect>
+                        <rect x="300" y="100" width="120" height="85" fill="#c7d2fe" stroke="#6366f1"></rect>
+                        <text x="360" y="230" fill="#166534">50%</text>
+                        <text x="360" y="146" fill="#3730a3">50%</text>
+                        <text x="360" y="300" fill="#475569">扩充领域能力，防坍缩</text>
+
+                        <text x="560" y="72" fill="#334155">最后 20% 步数</text>
+                        <rect x="500" y="219" width="120" height="51" fill="#86efac" stroke="#16a34a"></rect>
+                        <rect x="500" y="100" width="120" height="119" fill="#c7d2fe" stroke="#6366f1"></rect>
+                        <text x="560" y="248" fill="#166534">30%</text>
+                        <text x="560" y="164" fill="#3730a3">70%</text>
+                        <text x="560" y="300" fill="#475569">合成数据定向提升下游能力</text>
+                    </g>
+                    <line x1="80" y1="270" x2="660" y2="270" stroke="#cbd5e1"></line>
+                </g>
+            </svg>
+            <figcaption>图 13-1　“三明治配比法”：前期以自然数据为主（占 80%）建立语言与知识基础，中期自然/合成各半扩充领域能力并抑制坍缩，后期以高质量合成数据为主（占 70%）定向提升下游能力。各阶段步数占比与配比为经验值，非固定配比（教学示意）。</figcaption>
+        </figure>
 
         <p>1. <strong>底层（前60%训练步数）：自然数据为主（80%+），合成数据为辅。</strong>这个阶段让模型建立坚实的语言基础和知识体系。</p>
 
@@ -250,12 +310,20 @@ def filter_quality(candidates):
 
         <p>好了，这一章我们探讨了合成数据的巨大价值与潜在风险，学习了Self-Instruct、Persona-driven、Backtranslation和LLM-as-Judge筛选等生成方法，讨论了数据课程学习的从易到难策略，深入分析了DoReMi和DoGE等自动配比优化方法，最后介绍了DeepSeek、Qwen等2026年工业实践。记住：<strong>数据策略正在取代模型架构成为训练质量的第一决定因素</strong>。下一章我们将把"数据"和"训练"结合起来——<strong>第14章「Mid-training与继续预训练」</strong>，探讨怎么在一个基座模型上注入特定领域的知识。咱们下章见。</p>
 
+        <h2>本章参考</h2>
+        <ul>
+            <li>Xie et al., <em>DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining</em>, 2023 — <a href="https://arxiv.org/abs/2305.10429">arXiv:2305.10429</a>（13.4 节 DoReMi 与公式 13-1）。</li>
+            <li>Wang et al., <em>Self-Instruct: Aligning Language Models with Self-Generated Instructions</em>, 2022 — <a href="https://arxiv.org/abs/2212.10560">arXiv:2212.10560</a>（13.2 节 Self-Instruct）。</li>
+            <li>Shumailov et al., <em>The Curse of Recursion: Training on Generated Data Makes Models Forget</em>, 2023 — <a href="https://arxiv.org/abs/2305.17493">arXiv:2305.17493</a>（13.1 节 Model Collapse）。</li>
+            <li>Qwen Team, <em>Qwen2.5 Technical Report</em>, 2024 — <a href="https://arxiv.org/abs/2412.15115">arXiv:2412.15115</a>（13.5 节 Qwen 合成数据实践）。</li>
+        </ul>
+
         <div class="footer-nav">
             <a href="12.html">← 上一章</a>
             <a href="index.html">📖 返回目录</a>
             <a href="14.html">下一章 →</a>
         </div>
-    </div>
+    </main>
 </div>
 </div>
 </body>
