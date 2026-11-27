@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第24章 推理优化技术</h1>
 
         <p>大家好，我是你们的讲师。上一章我们讲了量化，把模型"瘦身"了。但瘦下来不等于跑得快——模型推理的瓶颈从来不只是权重的大小。在很多实际场景中，KV Cache能吃掉比权重更多的显存，attention计算的复杂度随序列长度平方级增长，GPU利用率可能只有个位数。这一章我们深入到<strong>推理优化</strong>的核心技术，让模型真正"跑起来"。</p>
@@ -359,6 +360,7 @@ class ContinuousBatchingScheduler:
             <a href="index.html">📖 返回目录</a>
             <a href="25.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>
