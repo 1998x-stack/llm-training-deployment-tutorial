@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第18章 参数高效微调(PEFT)</h1>
 
         <p>大家好，我是你们的讲师。前面三章我们讲的都是"全量微调"——把整个模型的所有参数都参与训练。全量微调效果好，但对算力的要求令人窒息。一个70B的模型做一次全量SFT，至少需要8张A100（80GB），耗时数天。如果你有100个业务场景需要适配100个不同的模型副本？那硬件成本直接起飞。</p>
@@ -329,6 +330,7 @@ model.gradient_checkpointing_enable()</code></pre>
             <a href="index.html">📖 返回目录</a>
             <a href="19.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>
