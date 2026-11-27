@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第17章 DPO与偏好对齐优化</h1>
 
         <p>大家好，我是你们的讲师。上一章我们深入了RLHF——从奖励模型训练到PPO的完整链路。RLHF效果卓越，但它有一个让人头疼的问题：太复杂。训练不稳定、四个模型同时驻留、reward hacking、需要写大量的RL训练pipeline代码——这一切让很多团队望而却步。如果你问一个做过RLHF的工程师"做RLHF最痛苦的是什么"，他大概率不会说"理论难"，而是会说"工程太烦了"。</p>
@@ -362,6 +363,7 @@ def dpo_loss(policy_logps, ref_logps, chosen_ids, rejected_ids, beta):
             <a href="index.html">📖 返回目录</a>
             <a href="18.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>
