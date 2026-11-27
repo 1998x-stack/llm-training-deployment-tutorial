@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第7章 混合精度与显存优化</h1>
 
         <p>大家好，我是你们的讲师。上一章讲到优化器时，我们提到了一个让人头疼的数字——AdamW需要为每个参数存储两个FP32的动量项，总显存高达56GB（对于7B模型）。这还只是优化器状态。如果所有东西都用FP32来算，7B模型单卡根本训不了。这就是为什么<strong>混合精度训练</strong>几乎是所有大模型训练的标配。</p>
@@ -304,6 +305,7 @@ class OptimizedTransformerLayer(nn.Module):
             <a href="index.html">📖 返回目录</a>
             <a href="08.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>

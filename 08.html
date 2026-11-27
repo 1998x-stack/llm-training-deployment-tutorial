@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第8章 3D并行与大规模训练</h1>
 
         <p>大家好，我是你们的讲师。前面几章我们聊了混合精度、优化器调度，这些都假设模型能放进一张GPU。可现实是，一个70B的模型用FP16存权重就占了140GB，加上优化器状态（AdamW存两份动量）和梯度，总共超过400GB——H100才80GB显存。怎么办？答案只有一个：<strong>拆分</strong>。</p>
@@ -313,6 +314,7 @@ hidden → reduce_scatter(MLP_W2) → matmul → all-gather → output</code></p
             <a href="index.html">📖 返回目录</a>
             <a href="09.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>
