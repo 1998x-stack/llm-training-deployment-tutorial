@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第5章 分布式训练基础</h1>
 
         <p>大家好，我是你们的讲师。前面几章我们搭建了一个完整的"单卡认知"——理解了数据怎么清洗、文本怎么tokenize、Transformer结构怎么工作。但在现实中，没有任何一个大模型是在单张GPU上训练的。即使是最小的1.5B模型，在FP16下也需要约3GB显存来存放参数，但训练时的激活值、梯度、优化器状态会把显存需求放大5-10倍。7B模型的话，单卡H100（80GB）也放不下。这就是为什么我们需要分布式训练。</p>
@@ -293,6 +294,7 @@ for batch in dataloader:
             <a href="index.html">📖 返回目录</a>
             <a href="06.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>

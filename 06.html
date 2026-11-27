@@ -43,6 +43,7 @@
         </ul>
     </nav>
     <main class="main-content">
+        <article class="chapter">
         <h1>第6章 优化器与学习率调度</h1>
 
         <p>大家好，我是你们的讲师。前几章我们把模型架了起来、数据喂了进去、分布式框架也搭好了。但有一个问题贯穿始终：<strong>参数到底怎么更新？</strong>这就是优化器的职责。你可能觉得优化器不就是一个SGD或者Adam吗？随便选一个就好了。但事实是，优化器的选择和学习率调度策略对训练<strong>收敛速度</strong>和<strong>最终模型质量</strong>的影响非常大。同样的模型架构、同样的数据，换一个优化器，可能训练时间缩短30%，或者下游任务准确率提升2-3个百分点。</p>
@@ -313,6 +314,7 @@ def get_lr_scheduler(name, step, warmup_steps, total_steps, max_lr, min_lr=0):
             <a href="index.html">📖 返回目录</a>
             <a href="07.html">下一章 →</a>
         </div>
+        </article>
     </main>
 </div>
 </div>
